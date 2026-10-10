@@ -312,6 +312,32 @@ export function buildWorld(data, scene) {
   trunks.frustumCulled = crowns.frustumCulled = false;
   scene.add(trunks, crowns);
 
+  // фонари по правому краю каждой проезжей части: мелькают мимо и дают ощущение скорости
+  const lampAt = [];
+  for (const c of [N, S]) {
+    for (let i = 2; i < c.n - 1; i += 5) {
+      const len = c.cum[i + 1] - c.cum[i] || 1;
+      const dx = (c.x[i + 1] - c.x[i]) / len, dz = (c.z[i + 1] - c.z[i]) / len;
+      const off = c.lanes[Math.min(i, c.lanes.length - 1)] * LANE_W / 2 + 1.4;
+      lampAt.push([c.x[i] - dz * off, c.z[i] + dx * off, Math.atan2(dx, dz)]);
+    }
+  }
+  const poleG = new THREE.CylinderGeometry(0.07, 0.1, 8, 6);
+  poleG.translate(0, 4, 0);
+  const armG = new THREE.BoxGeometry(2.2, 0.09, 0.12);
+  armG.translate(1.0, 7.95, 0);
+  const lampMat = new THREE.MeshLambertMaterial({ color: 0x3a3f47 });
+  const poles = new THREE.InstancedMesh(poleG, lampMat, lampAt.length);
+  const arms = new THREE.InstancedMesh(armG, lampMat, lampAt.length);
+  const up = new THREE.Vector3(0, 1, 0);
+  lampAt.forEach(([x, z, yaw], i) => {
+    mtx.compose(ps.set(x, 0, z), q.setFromAxisAngle(up, yaw), sc.set(1, 1, 1));
+    poles.setMatrixAt(i, mtx);
+    arms.setMatrixAt(i, mtx);
+  });
+  poles.frustumCulled = arms.frustumCulled = false;
+  scene.add(poles, arms);
+
   // старт у театра драмы и финиш у «Авроры» — на северной проезжей части
   const a = {}, bb = {}, o = {};
   N.project(data.marks.theatre[0], data.marks.theatre[1], -1, a);

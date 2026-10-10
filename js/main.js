@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildWorld } from './world.js';
-import { Car } from './car.js';
+import { Car, alignSteer } from './car.js';
 import { LANE_W, laneOffset } from './chain.js';
 import { makePlayerCar } from './carmodel.js';
 import { Traffic } from './traffic.js';
@@ -117,6 +117,7 @@ function tick(dt) {
   const driving = G.state === 'drive';
   input.read(inp);
   const ctl = driving ? inp : idle;
+  if (driving && inp.steer === 0) inp.steer = roadAssist();
   const px = car.x, pz = car.z;
   let acc = dt;
   while (acc > 1e-6) { const h = Math.min(STEP, acc); car.step(h, ctl); acc -= h; }
@@ -174,6 +175,22 @@ function tick(dt) {
   }
 }
 
+// Руль отпущен — машина сама выравнивается вдоль Красной. Работает только на её проезжей части
+// и только если мы едем примерно вдоль дороги (в любую сторону).
+function roadAssist() {
+  if (car.speed < 9) return 0;
+  let best = null;
+  for (const key of ['north', 'south']) {
+    const p = traffic.proj[key];
+    if (p.d < p.lanes * LANE_W / 2 + 4 && (!best || p.d < best.d)) best = p;
+  }
+  if (!best) return 0;
+  let yaw = Math.atan2(best.dx, best.dz);
+  if (Math.sin(car.yaw) * best.dx + Math.cos(car.yaw) * best.dz < 0) yaw += Math.PI;
+  const d = Math.atan2(Math.sin(yaw - car.yaw), Math.cos(yaw - car.yaw));
+  return Math.abs(d) < 0.6 ? alignSteer(car, yaw) : 0;
+}
+
 function crash(rel) {
   if (G.state !== 'drive') return;
   G.shake = Math.min(1.2, 0.35 + rel / 30);
@@ -205,13 +222,15 @@ function draw(dt) {
   const cx = Math.sin(G.camYaw), cz = Math.cos(G.camYaw);
   // после аварии камера отъезжает вверх, чтобы не оказаться внутри чужой машины
   G.lift += ((G.state === 'crash' ? 1 : 0) - G.lift) * Math.min(1, dt * 3);
-  const dist = 6.4 + Math.min(2.2, v * 0.03) + G.lift * 3.5, height = 2.35 + Math.min(0.5, v * 0.006) + G.lift * 4.5;
+  const dist = 5.3 + Math.min(1.9, v * 0.028) + G.lift * 3.5, height = 1.95 + Math.min(0.35, v * 0.005) + G.lift * 4.5;
   G.shake *= Math.exp(-dt * 4);
-  const sh = G.shake + Math.max(0, v - 45) * 0.0012;
+  const sh = G.shake + Math.max(0, v - 22) * 0.0011;
   camera.position.set(car.x - cx * dist + (Math.random() - 0.5) * sh, height + (Math.random() - 0.5) * sh, car.z - cz * dist + (Math.random() - 0.5) * sh);
-  camera.lookAt(car.x + cx * 7, 1.05, car.z + cz * 7);
-  const fov = 60 + Math.min(24, v * 0.34);
+  camera.lookAt(car.x + cx * 8, 1.0, car.z + cz * 8);
+  // угол обзора быстро раскрывается до ~100 км/ч и дальше растёт плавно — скорость чувствуется раньше
+  const fov = 60 + 22 * (1 - Math.exp(-v / 26));
   if (Math.abs(fov - camera.fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 4); camera.updateProjectionMatrix(); }
+  $('vig').style.opacity = G.state === 'drive' ? Math.max(0, Math.min(1, (v - 18) / 45)).toFixed(2) : '0';
 
   if (G.state === 'drive') {
     $('speed').textContent = Math.round(Math.abs(car.u) * 3.6);
@@ -256,6 +275,16 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Enter' && G.state !== 'drive') startRun();
 });
 addEventListener('contextmenu', (e) => e.preventDefault());
+// Safari на айфоне игнорирует запрет масштаба в meta — гасим щипок и двойное касание сами
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  const now = performance.now();
+  if (now - lastTouchEnd < 350) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+document.addEventListener('dblclick', (e) => e.preventDefault());
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 
 showMenu();

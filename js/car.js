@@ -5,20 +5,37 @@
 
 const G = 9.81;
 
+// Настройка аркадная: сцепление заметно выше настоящего, задняя ось держит лучше передней
+// (машину не разворачивает). Короткое нажатие руля на 0,3 с на любой скорости сдвигает машину
+// на одну полосу примерно за 0,75 с — это и есть «нырок» между машинами.
 export const CAR_SETUP = {
   mass: 1420,        // кг
-  inertia: 2350,     // момент инерции вокруг вертикали
+  inertia: 1300,     // момент инерции вокруг вертикали: меньше — резче отклик на руль
   a: 1.22,           // от центра масс до передней оси, м
   b: 1.42,           // до задней оси
-  cgH: 0.5,          // высота центра масс
-  grip: 1.18,        // сцепление шин
-  tyreB: 13, tyreC: 1.45, // жёсткость и форма кривой шины
-  power: 235000,     // Вт
-  driveForce: 11500, // предел тяги на низкой скорости, Н
-  brakeG: 1.15,      // замедление на тормозах, g
+  cgH: 0.1,          // высота центра масс; нарочно занижена, чтобы торможение в повороте не разворачивало машину
+  grip: 3.3,         // сцепление шин
+  rearBias: 1.14,    // запас сцепления сзади: больше — устойчивее, меньше — охотнее в занос
+  tyreB: 18, tyreC: 1.25, // жёсткость и форма кривой шины (C ближе к 1 — срыв мягче)
+  yawDamp: 4500,     // гашение раскачки по курсу
+  power: 260000,     // Вт
+  driveForce: 13000, // предел тяги на низкой скорости, Н
+  brakeG: 1.6,       // замедление на тормозах, g
   dragK: 0.42,       // аэродинамика
   steerLock: 0.6,    // максимальный угол колёс на месте, рад
+  steerFade: 0.4,    // насколько быстро угол уменьшается со скоростью
 };
+
+// угол колёс, доступный на скорости u
+export const steerLockAt = (u, S = CAR_SETUP) => S.steerLock / (1 + S.steerFade * (u / 9) * (u / 9));
+
+// Помощник: когда руль отпущен, колёса сами встают вдоль дороги, и машина выравнивается.
+// roadYaw — направление дороги; возвращает команду руля −1..1.
+export function alignSteer(car, roadYaw) {
+  const d = Math.atan2(Math.sin(roadYaw - car.yaw), Math.cos(roadYaw - car.yaw));
+  const lock = steerLockAt(Math.abs(car.u), car.s);
+  return Math.max(-1, Math.min(1, (d * 1.15 - car.r * 0.1) / lock));
+}
 
 const tyre = (alpha, load, S) => -S.grip * load * Math.sin(S.tyreC * Math.atan(S.tyreB * alpha));
 
@@ -53,9 +70,9 @@ export class Car {
     const au = Math.abs(u);
 
     // руль: чем быстрее едем, тем меньше угол, иначе на 150 км/ч машину срывает от одного касания
-    const lock = S.steerLock / (1 + 0.75 * (au / 9) * (au / 9));
+    const lock = steerLockAt(au, S);
     const target = inp.steer * lock;
-    const rate = lock * (Math.abs(target) < Math.abs(this.steer) ? 9 : 6.5);
+    const rate = lock * (Math.abs(target) < Math.abs(this.steer) ? 12 : 9);
     const ds = target - this.steer;
     this.steer += Math.abs(ds) < rate * dt ? ds : Math.sign(ds) * rate * dt;
     const cd = Math.cos(this.steer), sd = Math.sin(this.steer);
@@ -88,14 +105,15 @@ export class Car {
     Fxf = Math.max(-capF * 0.85, Math.min(capF * 0.85, Fxf));
     let rearGrip = 1;
     if (inp.handbrake) { Fxr = -dir * capR * 0.6; rearGrip = 0.6; }
-    const kr = Math.sqrt(Math.max(0.05, 1 - (Fxr / capR) ** 2)) * rearGrip;
-    const kf = Math.sqrt(Math.max(0.05, 1 - (Fxf / capF) ** 2));
+    // смягчённый круг трения: газ и тормоз отнимают у шины боковое сцепление, но не всё
+    const kr = Math.sqrt(1 - 0.5 * (Fxr / capR) ** 2) * rearGrip * S.rearBias;
+    const kf = Math.sqrt(1 - 0.5 * (Fxf / capF) ** 2);
 
     // углы увода: скорость колеса в его собственных осях
     const vfy = vl + S.a * this.r, vry = vl - S.b * this.r;
     const wfx = u * cd + vfy * sd, wfy = -u * sd + vfy * cd;
-    const alphaF = Math.atan2(wfy, Math.max(Math.abs(wfx), 2.2));
-    const alphaR = Math.atan2(vry, Math.max(au, 2.2));
+    const alphaF = Math.atan2(wfy, Math.max(Math.abs(wfx), 3));
+    const alphaR = Math.atan2(vry, Math.max(au, 3));
     const Fyf = tyre(alphaF, Fzf, S) * kf; // поперёк переднего колеса
     const Fyr = tyre(alphaR, Fzr, S) * kr;
 
@@ -103,7 +121,7 @@ export class Car {
     const drag = S.dragK * u * au + dir * 190;
     const Fx = Fxr + Fxf * cd - Fyf * sd - drag;
     const Fy = Fyr + Fyf * cd + Fxf * sd;
-    const Mz = S.a * (Fyf * cd + Fxf * sd) - S.b * Fyr;
+    const Mz = S.a * (Fyf * cd + Fxf * sd) - S.b * Fyr - S.yawDamp * this.r;
 
     const axw = (Fx * fx + Fy * lx) / S.mass, azw = (Fx * fz + Fy * lz) / S.mass;
     this.vx += axw * dt; this.vz += azw * dt;

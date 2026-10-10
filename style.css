@@ -54,7 +54,7 @@ button.ghost { display: block; width: 100%; padding: 11px; margin-top: 8px; bord
 .stats b { font-size: 21px; font-variant-numeric: tabular-nums; }
 
 #mute { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); width: 38px; height: 38px; border-radius: 12px; border: 0; background: rgba(12, 16, 22, 0.62); color: #fff; font-size: 17px; cursor: pointer; z-index: 5; }
-@media (max-height: 420px) { .card { padding: 14px 18px 12px; } .card h1 { font-size: 24px; } .swatches { margin: 10px 0; } .keys { display: none; } }
+@media (max-height: 420px) { .card { padding: 14px 18px 12px; } .card h1 { font-size: 24px; } .swatches { margin: 10px 0; } }
 
 /* телефон в горизонтали: спидометр уезжает наверх, чтобы не закрывать машину */
 @media (max-height: 500px) {
@@ -64,3 +64,7 @@ button.ghost { display: block; width: 100%; padding: 11px; margin-top: 8px; bord
   .speed i { top: 5px; right: 8px; font-size: 12px; }
   #pop { top: 30%; }
 }
+
+/* затемнение краёв на скорости — «тоннель» */
+#vig { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 50% 58%, transparent 42%, rgba(6, 10, 16, 0.5) 100%); }
+html { touch-action: none; }

@@ -8,11 +8,12 @@
 <meta name="apple-mobile-web-app-title" content="Шашки КРД">
 <meta name="theme-color" content="#101418">
 <title>Шашки · Краснодар</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
 <canvas id="view"></canvas>
+<div id="vig"></div>
 
 <div id="hud" hidden>
   <div class="hud-top">
@@ -43,9 +44,9 @@
     <p class="route">Красная: театр драмы → «Аврора» · 2,6 км</p>
     <div class="swatches" id="swatches"></div>
     <button id="go" class="primary">Поехали</button>
-    <p class="keys">Клавиатура: стрелки или WASD, пробел — ручник, R — заново</p>
+    <p class="keys">Коротко нажмите руль — машина нырнёт в соседнюю полосу и сама выровняется</p>
     <p class="best" id="best"></p>
-    <p class="osm">Карта: © OpenStreetMap contributors</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.2</p>
   </div>
 </div>
 
@@ -64,6 +65,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=2"></script>
 </body>
 </html>
