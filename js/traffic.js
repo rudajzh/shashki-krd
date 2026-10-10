@@ -1,7 +1,7 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 import * as THREE from 'three';
-import { laneOffset, LANE_W } from './chain.js?v=5';
-import { CAR_TYPES, makeTrafficMesh } from './carmodel.js?v=5';
+import { laneOffset, LANE_W } from './chain.js?v=6';
+import { CAR_TYPES, makeTrafficMesh } from './carmodel.js?v=6';
 
 const TYPES = ['sedan', 'sedan', 'sedan', 'hatch', 'hatch', 'suv', 'suv', 'van'];
 const COLORS = [0xf2f2f0, 0xf2f2f0, 0xc4c8cc, 0xc4c8cc, 0x1b1c1f, 0x1b1c1f, 0x6b7077, 0x23395d, 0x8c1c1c, 0xd8cdb4, 0x2f4a3a, 0xe0b23a];

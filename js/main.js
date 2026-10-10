@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=5';
-import { Car, alignSteer } from './car.js?v=5';
-import { LANE_W, laneOffset } from './chain.js?v=5';
-import { makePlayerCar } from './carmodel.js?v=5';
-import { Traffic } from './traffic.js?v=5';
-import { Input } from './input.js?v=5';
-import { Sound } from './audio.js?v=5';
+import { buildWorld } from './world.js?v=6';
+import { Car, alignSteer } from './car.js?v=6';
+import { LANE_W, laneOffset } from './chain.js?v=6';
+import { makePlayerCar } from './carmodel.js?v=6';
+import { Traffic } from './traffic.js?v=6';
+import { Input } from './input.js?v=6';
+import { Sound } from './audio.js?v=6';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -40,7 +40,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=5')).json();
+const data = await (await fetch('data/krasnaya.json?v=6')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();

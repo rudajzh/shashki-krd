@@ -1,7 +1,7 @@
 // Строит город из data/*.json: дороги, разметка, дома, деревья + проверка столкновений со зданиями.
 import * as THREE from 'three';
-import { Chain, LANE_W } from './chain.js?v=5';
-import { buildLandmarks } from './landmarks.js?v=5';
+import { Chain, LANE_W } from './chain.js?v=6';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=6';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -231,7 +231,7 @@ export function buildWorld(data, scene) {
   const addToGrid = (k, idx) => { let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(idx); };
   const col = new THREE.Color(), roofCol = new THREE.Color();
   let shukhov = null;
-  const named = [];
+  const named = [], custom = {};
   // препятствие для машины: многоугольник в сетке столкновений
   function addSolid(p) {
     const n = p.length / 2;
@@ -258,6 +258,8 @@ export function buildWorld(data, scene) {
       shukhov = [cx, cz];
       continue;
     }
+    const special = Object.keys(CUSTOM_BUILDINGS).find((k) => CUSTOM_BUILDINGS[k] === b.n);
+    if (special) { custom[special] = p; addSolid(p); continue; } // своя модель вместо коробки
     const mall = b.n === 'Галерея Краснодар';
     const h = mall ? 24 : b.h, tall = h > 34 || mall;
     col.setHex(mall ? 0x6f8fa8 : tall ? GLASS[b.s % GLASS.length] : WALLS[b.s % WALLS.length]);
@@ -387,7 +389,7 @@ export function buildWorld(data, scene) {
   N.at(finishS, o);
   gate(scene, o.x, o.z, o.dx, o.dz, o.lanes * LANE_W, 'ФИНИШ · АВРОРА', '#d1242f');
 
-  buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov });
+  buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov, custom });
 
   // столкновения: точка внутри здания / рядом со стволом
   function pointInPoly(pl, x, z) {

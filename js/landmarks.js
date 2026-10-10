@@ -1,98 +1,193 @@
 // Узнаваемые места Красной: Александровская арка, «Аврора», фонтаны, башня Шухова,
 // вывески на зданиях и синие таблички с названиями поперечных улиц.
 import * as THREE from 'three';
-import { LANE_W } from './chain.js?v=5';
+import { LANE_W } from './chain.js?v=6';
 
 const L = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
-const BRICK = L(0xa5452f), WHITE = L(0xf1ece0), TENT = L(0x2f6658), GOLD = L(0xd8a41e, { emissive: 0x4a3400 });
-const STONE = L(0xa39c93), GRANITE = L(0x8d7f7a), BRONZE = L(0x5d4e36);
+const BRICK = L(0xb5522f), BRICK_D = L(0x94412a), TRIM = L(0xc7653c), SLATE = L(0x6c7077), DARK = L(0x34373c);
+const SLATE_2 = L(0x6c7077, { side: THREE.DoubleSide }); // у зеркальной крыши крыла грани вывернуты
+const KOK = L(0x9aa67c), ICON = L(0xe9dfc6), GOLD = L(0xd8a41e, { emissive: 0x4a3400 });
+const STONE = L(0xa39c93), GRANITE = L(0x5a5653), BRONZE = L(0x3b352d);
 const WATER = new THREE.MeshBasicMaterial({ color: 0x66aee0 });
 const JET = new THREE.MeshBasicMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.7 });
 
 const box = (g, mat, w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); g.add(m); return m; };
 
-function tent(g, r, h, x, y, z) {
-  const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 4), TENT);
-  c.rotation.y = Math.PI / 4;
-  c.position.set(x, y + h / 2, z);
-  g.add(c);
-  const tip = new THREE.Mesh(new THREE.SphereGeometry(r * 0.2, 8, 6), GOLD);
-  tip.position.set(x, y + h + r * 0.12, z);
-  g.add(tip);
-}
-
-// Александровская триумфальная арка: красный кирпич с белым декором, шатры с золотыми навершиями
+// Александровская триумфальная арка. Сделана по фотографиям: вся из красного кирпича,
+// высокая середина с большим проездом, два низких крыла с пешеходными арками под односкатными крышами,
+// над серединой — серый шатёр с площадкой, по углам тонкие башенки, над проездом кокошник с иконой.
 function arch(scene, x, z, yaw, addSolid) {
   const g = new THREE.Group();
-  const W = 13, H = 10.5, D = 5, OW = 5.2, OH = 5.4;
-  const sh = new THREE.Shape();
-  sh.moveTo(-W / 2, 0); sh.lineTo(W / 2, 0); sh.lineTo(W / 2, H); sh.lineTo(-W / 2, H); sh.closePath();
-  const hole = new THREE.Path();
-  hole.moveTo(-OW / 2, 0); hole.lineTo(-OW / 2, OH); hole.absarc(0, OH, OW / 2, Math.PI, 0, true); hole.lineTo(OW / 2, 0); hole.closePath();
-  sh.holes.push(hole);
-  const body = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: D, bevelEnabled: false, curveSegments: 10 }), BRICK);
-  body.position.z = -D / 2;
-  g.add(body);
-  // белые пояса, карниз и обрамление проезда
-  box(g, WHITE, W + 0.5, 0.4, D + 0.5, 0, 4.9, 0);
-  box(g, WHITE, W + 0.7, 0.5, D + 0.7, 0, H + 0.25, 0);
-  box(g, WHITE, W + 0.3, 0.7, D + 0.3, 0, 0.35, 0).scale.set(1, 1, 1);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    box(g, WHITE, 0.45, H - 5.4, 0.3, sx * (OW / 2 + 0.55), 5.1 + (H - 5.4) / 2, sz * (D / 2 + 0.05));
-    box(g, WHITE, 0.45, H, 0.3, sx * (W / 2 - 0.4), H / 2, sz * (D / 2 + 0.05));
+  const W = 9, H = 11, D = 5, OW = 5, OH = 5.6;       // середина и её проезд
+  const WW = 5.4, WH = 5.3, WD = 4, PW = 2.1, PH = 2.5; // крыло и его проход
+  const wall = (w, h, d, ow, oh, cx) => {
+    const sh = new THREE.Shape();
+    sh.moveTo(-w / 2, 0); sh.lineTo(w / 2, 0); sh.lineTo(w / 2, h); sh.lineTo(-w / 2, h); sh.closePath();
+    const hole = new THREE.Path();
+    hole.moveTo(-ow / 2, 0); hole.lineTo(-ow / 2, oh); hole.absarc(0, oh, ow / 2, Math.PI, 0, true); hole.lineTo(ow / 2, 0); hole.closePath();
+    sh.holes.push(hole);
+    const m = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false, curveSegments: 10 }), BRICK);
+    m.position.set(cx, 0, -d / 2);
+    g.add(m);
+  };
+  wall(W, H, D, OW, OH, 0);
+  for (const sx of [-1, 1]) {
+    const cx = sx * (W / 2 + WW / 2);
+    wall(WW, WH, WD, PW, PH, cx);
+    // односкатная крыша крыла поднимается к середине
+    const rs = new THREE.Shape();
+    rs.moveTo(-WW / 2 - 0.2, 0); rs.lineTo(WW / 2, 0); rs.lineTo(WW / 2, 2.3); rs.closePath();
+    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(rs, { depth: WD + 0.4, bevelEnabled: false }), SLATE_2);
+    roof.scale.x = -sx; // у левого крыла высокая сторона справа, у правого — слева
+    roof.position.set(cx, WH + 0.25, -(WD + 0.4) / 2);
+    g.add(roof);
+    box(g, TRIM, WW + 0.3, 0.3, WD + 0.3, cx, WH + 0.1, 0);
+    box(g, TRIM, 0.7, WH + 0.9, WD + 0.2, sx * (W / 2 + WW - 0.35), (WH + 0.9) / 2, 0); // крайний пилон
   }
-  // аттик с кокошником и иконой
-  box(g, BRICK, W - 2.6, 1.7, D - 0.6, 0, H + 1.35, 0);
+  // пояса и карниз середины
+  box(g, TRIM, W + 0.35, 0.35, D + 0.35, 0, OH + OW / 2 + 0.9, 0);
+  box(g, TRIM, W + 0.6, 0.45, D + 0.6, 0, H + 0.2, 0);
+  box(g, TRIM, W + 0.3, 0.6, D + 0.3, 0, 0.3, 0);
+  // кокошник с иконой и табличка — с обеих сторон
   for (const sz of [-1, 1]) {
-    const tri = new THREE.Shape();
-    tri.moveTo(-2.6, 0); tri.lineTo(2.6, 0); tri.lineTo(0, 2.4); tri.closePath();
-    const ped = new THREE.Mesh(new THREE.ExtrudeGeometry(tri, { depth: 0.35, bevelEnabled: false }), WHITE);
-    ped.position.set(0, H + 0.5, sz > 0 ? D / 2 - 0.1 : -D / 2 - 0.25);
-    g.add(ped);
-    box(g, GOLD, 1.1, 1.3, 0.12, 0, H + 1.25, sz * (D / 2 + 0.3));
+    const k = new THREE.Shape();
+    k.moveTo(-1.8, 0); k.quadraticCurveTo(-1.7, 1.5, 0, 2.5); k.quadraticCurveTo(1.7, 1.5, 1.8, 0); k.closePath();
+    const kok = new THREE.Mesh(new THREE.ExtrudeGeometry(k, { depth: 0.3, bevelEnabled: false, curveSegments: 6 }), KOK);
+    kok.position.set(0, H - 0.2, sz > 0 ? D / 2 - 0.05 : -D / 2 - 0.25);
+    g.add(kok);
+    box(g, ICON, 0.8, 1.1, 0.1, 0, H + 0.55, sz * (D / 2 + 0.28));
+    box(g, ICON, 1.5, 0.5, 0.1, 0, OH + OW / 2 + 1.75, sz * (D / 2 + 0.06));
   }
-  // четыре угловые башенки и центральный шатёр
+  // серый шатёр с площадкой и ограждением
+  const hip = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 1, 4.2, 4), SLATE);
+  hip.rotation.y = Math.PI / 4;
+  hip.scale.set((W - 0.6) / Math.SQRT2, 1, (D - 0.3) / Math.SQRT2);
+  hip.position.y = H + 0.4 + 2.1;
+  g.add(hip);
+  box(g, DARK, (W - 0.6) * 0.45 + 0.3, 0.35, (D - 0.3) * 0.45 + 0.3, 0, H + 4.75, 0);
+  // четыре тонкие башенки по углам середины
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    const tx = sx * (W / 2 - 1.2), tz = sz * (D / 2 - 1.1);
-    box(g, BRICK, 1.9, 2.6, 1.9, tx, H + 1.8, tz);
-    box(g, WHITE, 2.15, 0.25, 2.15, tx, H + 3.15, tz);
-    tent(g, 1.45, 3.0, tx, H + 3.25, tz);
+    const tx = sx * (W / 2 - 0.35), tz = sz * (D / 2 - 0.2);
+    box(g, BRICK, 1.0, H + 1.6, 1.0, tx, (H + 1.6) / 2, tz);
+    box(g, TRIM, 1.25, 0.25, 1.25, tx, H + 1.6, tz);
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.72, 2.6, 4), BRICK_D);
+    sp.rotation.y = Math.PI / 4;
+    sp.position.set(tx, H + 1.7 + 1.3, tz);
+    g.add(sp);
+    const fin = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 5), DARK);
+    fin.position.set(tx, H + 4.45, tz);
+    g.add(fin);
   }
-  box(g, BRICK, 3.0, 1.2, 3.0, 0, H + 2.8, 0);
-  tent(g, 2.3, 4.4, 0, H + 3.4, 0);
   g.position.set(x, 0, z);
   g.rotation.y = yaw;
   scene.add(g);
-  // опоры — препятствия, проезд свободен
+  // всё, кроме большого проезда, — препятствие
   const c = Math.cos(yaw), s = Math.sin(yaw);
   for (const sx of [-1, 1]) {
-    const x0 = sx * OW / 2, x1 = sx * W / 2, pts = [];
+    const x0 = sx * OW / 2, x1 = sx * (W / 2 + WW), pts = [];
     for (const [lx, lz] of [[x0, -D / 2], [x1, -D / 2], [x1, D / 2], [x0, D / 2]]) pts.push(x + lx * c + lz * s, z - lx * s + lz * c);
     addSolid(pts);
   }
 }
 
-// памятник «Аврора»: девушка со звездой на высоком постаменте
+// Памятник «Аврора» по фото: тёмная фигура девушки с поднятой рукой и звездой, винтовка за спиной,
+// невысокий тёмный постамент на круглой площадке.
 function avrora(scene, x, z, addSolid) {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 7.5, 1.2, 20), STONE);
-  base.position.y = 0.6; g.add(base);
-  const ped = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.3, 11, 8), GRANITE);
-  ped.position.y = 6.7; g.add(ped);
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.95, 3.6, 8), BRONZE);
-  body.position.y = 14; g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), BRONZE);
-  head.position.y = 16.2; g.add(head);
-  const arm = box(g, BRONZE, 0.28, 2.4, 0.28, 0.75, 16.4, 0);
-  arm.rotation.z = -0.35;
-  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.6), GOLD);
-  star.position.set(1.2, 17.9, 0); g.add(star);
-  box(g, BRONZE, 0.1, 3.4, 0.1, -0.7, 14.9, 0.2); // винтовка
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(7, 8, 1, 20), STONE);
+  base.position.y = 0.5; g.add(base);
+  const ped = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 3.4, 5.5, 6), GRANITE);
+  ped.position.y = 3.7; g.add(ped);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.6, 6.2, 8), BRONZE);
+  body.position.y = 9.5; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.72, 10, 8), BRONZE);
+  head.position.y = 13.2; g.add(head);
+  const arm = box(g, BRONZE, 0.45, 3.6, 0.45, 1.25, 13.6, 0);
+  arm.rotation.z = -0.3;
+  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.75), GOLD);
+  star.position.set(1.85, 15.8, 0); g.add(star);
+  const rifle = box(g, BRONZE, 0.14, 4.6, 0.14, -0.9, 11.4, -0.5);
+  rifle.rotation.z = 0.18;
   g.position.set(x, 0, z);
   scene.add(g);
   const pts = [];
-  for (let i = 0; i < 10; i++) pts.push(x + Math.cos(i / 10 * 6.283) * 7.5, z + Math.sin(i / 10 * 6.283) * 7.5);
+  for (let i = 0; i < 10; i++) pts.push(x + Math.cos(i / 10 * 6.283) * 8, z + Math.sin(i / 10 * 6.283) * 8);
   addSolid(pts);
+}
+
+// Описанный прямоугольник здания, повёрнутый лицом к точке target.
+// Возвращает группу в его центре: местная ось +z смотрит на target, W — ширина фасада, D — глубина.
+function facing(scene, p, target) {
+  const n = p.length / 2;
+  let ux = 1, uz = 0, bestLen = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, dx = p[j * 2] - p[i * 2], dz = p[j * 2 + 1] - p[i * 2 + 1], len = Math.hypot(dx, dz);
+    if (len > bestLen) { bestLen = len; ux = dx / len; uz = dz / len; }
+  }
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const a = p[i * 2] * ux + p[i * 2 + 1] * uz, b = -p[i * 2] * uz + p[i * 2 + 1] * ux;
+    a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b);
+  }
+  const ca = (a0 + a1) / 2, cb = (b0 + b1) / 2, cx = ca * ux - cb * uz, cz = ca * uz + cb * ux;
+  const tx = target[0] - cx, tz = target[1] - cz;
+  let best = null;
+  for (const [fx, fz, w, d] of [[ux, uz, b1 - b0, a1 - a0], [-ux, -uz, b1 - b0, a1 - a0], [-uz, ux, a1 - a0, b1 - b0], [uz, -ux, a1 - a0, b1 - b0]]) {
+    const dot = fx * tx + fz * tz;
+    if (!best || dot > best.dot) best = { dot, fx, fz, W: w, D: d };
+  }
+  const g = new THREE.Group();
+  g.position.set(cx, 0, cz);
+  g.rotation.y = Math.atan2(best.fx, best.fz);
+  scene.add(g);
+  return { g, W: best.W, D: best.D };
+}
+
+// Театр драмы по фото: тёмный стеклянный низ, над ним широкий вогнутый фасад
+// из вертикальных бежевых панелей, по панелям — буквы «ТЕАТР ДРАМЫ».
+function theatre(scene, p, target, textPlane) {
+  const { g, W, D } = facing(scene, p, target);
+  const H0 = 4, H1 = 10;
+  box(g, L(0x23272d), W - 6, H0, D - 6, 0, H0 / 2, 0);
+  box(g, L(0xbfae86), W, H1, D - 3, 0, H0 + H1 / 2, -1.5);
+  box(g, STONE, W + 14, 0.5, 16, 0, 0.25, D / 2 + 5); // площадка со ступенями
+  box(g, STONE, W + 8, 0.9, 9, 0, 0.45, D / 2 + 2);
+  const N = Math.max(13, Math.round(W / 4.2)), pw = W / N;
+  const letters = ['Т', 'Е', 'А', 'Т', 'Р', '', 'Д', 'Р', 'А', 'М', 'Ы'], first = Math.floor((N - letters.length) / 2);
+  const tones = [0xd2c198, 0xc3b188];
+  for (let i = 0; i < N; i++) {
+    const t = (i + 0.5) / N * 2 - 1, zc = D / 2 - 2.6 * (1 - t * t); // вогнутая дуга
+    const fin = box(g, L(tones[i % 2]), pw * 0.9, H1, 1.4, (i + 0.5) * pw - W / 2, H0 + H1 / 2, zc);
+    fin.rotation.y = -t * 0.12;
+    const ch = letters[i - first];
+    if (ch) {
+      const m = textPlane(ch, pw * 0.8, 2.6, '#' + tones[i % 2].toString(16), '#6b5836', 128);
+      m.position.set((i + 0.5) * pw - W / 2, H0 + H1 * 0.52, zc + 0.75);
+      m.rotation.y = -t * 0.12;
+      g.add(m);
+    }
+  }
+}
+
+// Кинотеатр «Аврора» по фото: стеклянный фасад и огромный тёмный козырёк, нависающий над входом.
+function cinema(scene, p, target, textPlane) {
+  const { g, W, D } = facing(scene, p, target);
+  const H = 9;
+  box(g, L(0x88a89c), W - 1.2, H, D, 0, H / 2, 0);
+  for (const sx of [-1, 1]) box(g, L(0xd8c078), 0.8, H + 0.4, D + 0.4, sx * (W / 2 - 0.3), (H + 0.4) / 2, 0);
+  for (let i = 1; i < 9; i++) box(g, L(0x5d6b66), 0.18, H - 1, 0.2, -W / 2 + i * W / 9, H / 2 + 0.3, D / 2 + 0.05); // переплёты
+  box(g, L(0x5d6b66), W - 1.4, 0.2, 0.2, 0, H * 0.45, D / 2 + 0.05);
+  // козырёк: плита, которая поднимается и утолщается к переднему краю
+  const sh = new THREE.Shape();
+  sh.moveTo(-D / 2 - 1, H - 0.2); sh.lineTo(D / 2 + 9, H + 1.2); sh.lineTo(D / 2 + 9, H + 3.4); sh.lineTo(-D / 2 - 1, H + 1.4); sh.closePath();
+  const slab = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: W + 5, bevelEnabled: false }), L(0x2a2c30));
+  slab.rotation.y = -Math.PI / 2; // профиль (вперёд, вверх) выдавлен по ширине фасада
+  slab.position.set((W + 5) / 2, 0, 0);
+  g.add(slab);
+  const sign = textPlane('АВРОРА', Math.min(W * 0.5, 22), 2.4, '#2a2c30', '#f2e9d0');
+  sign.position.set(0, H + 2.25, D / 2 + 9.08);
+  g.add(sign);
+  box(g, STONE, W + 10, 0.5, 12, 0, 0.25, D / 2 + 6);
 }
 
 function fountain(scene, x, z, r, addSolid) {
@@ -139,8 +234,6 @@ function shukhovTower(scene, x, z) {
 }
 
 const SIGN_NAMES = {
-  'Краснодарский академический театр драмы им. Горького': ['ТЕАТР ДРАМЫ', 3.4, '#7a1f1f'],
-  'Кинотеатр «Аврора»': ['АВРОРА', 3.6, '#b3122b'],
   'Галерея Краснодар': ['ГАЛЕРЕЯ КРАСНОДАР', 4.2, '#c8102e'],
   'Вкусно — и точка': ['ВКУСНО — И ТОЧКА', 1.6, '#0b5e3b'],
   'Универмаг "Краснодар"': ['УНИВЕРМАГ «КРАСНОДАР»', 2.2, '#1f3f7a'],
@@ -194,6 +287,8 @@ function wallSign(scene, b, spec, chains, textPlane) {
   scene.add(m);
 }
 
+const nearest = (list, p) => list.reduce((best, f) => (!best || Math.hypot(f[0] - p[0], f[1] - p[1]) < Math.hypot(best[0] - p[0], best[1] - p[1]) ? f : best), null);
+
 const shortStreet = (n) => n
   .replace(/^улица имени\s+(?:\S+\s+)?(\S+)$/, 'ул. $1')
   .replace(/^улица\s+(.+)$/, 'ул. $1')
@@ -223,7 +318,9 @@ function streetSign(scene, c, name, chain, textPlane, postMat) {
   scene.add(g);
 }
 
-export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov }) {
+export const CUSTOM_BUILDINGS = { theatre: 'Краснодарский академический театр драмы им. Горького', cinema: 'Кинотеатр «Аврора»' };
+
+export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov, custom }) {
   const lm = data.landmarks || {}, o = {};
   if (lm.arch) {
     chains.north.project(lm.arch[0], lm.arch[1], -1, o);
@@ -232,6 +329,9 @@ export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named
   if (lm.avrora) avrora(scene, lm.avrora[0], lm.avrora[1], addSolid);
   for (const [x, z, r] of lm.fountains || []) fountain(scene, x, z, r, addSolid);
   if (shukhov) shukhovTower(scene, shukhov[0], shukhov[1]);
+  const bigFountain = (lm.fountains || []).filter((f) => f[2] > 8);
+  if (custom.theatre) theatre(scene, custom.theatre, nearest(bigFountain, custom.theatre) || [chains.north.x[0], chains.north.z[0]], textPlane);
+  if (custom.cinema) cinema(scene, custom.cinema, lm.avrora || nearest(bigFountain, custom.cinema), textPlane);
   const done = new Set();
   for (const b of named) {
     const spec = SIGN_NAMES[b.n];
