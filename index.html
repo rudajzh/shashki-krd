@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -22,7 +22,7 @@
   <div class="hud-top">
     <div class="box"><span class="label">Очки</span><b id="score">0</b></div>
     <div class="box combo" id="comboBox"><span class="label">Серия</span><b id="combo">×1</b></div>
-    <div class="box right"><span class="label">До финиша</span><b id="left">0 м</b></div>
+    <div class="box right"><span class="label" id="lapLabel">Круг 1 · до разворота</span><b id="left">0 м</b></div>
   </div>
   <div id="pop"></div>
   <div class="speed"><b id="speed">0</b><span>км/ч</span><i id="gear">1</i></div>
@@ -47,14 +47,14 @@
 <div id="menu" class="overlay">
   <div class="card">
     <h1>Шашки · Краснодар</h1>
-    <p class="route">Красная: театр драмы → «Аврора» · 2,6 км</p>
+    <p class="route">Красная по кругу: театр драмы ↔ «Аврора» · круг 5,5 км</p>
     <div class="swatches" id="swatches"></div>
     <button id="go" class="primary">Поехали</button>
     <p class="keys">«Моргнуть» (клавиша F) — машина впереди уступит полосу</p>
     <p class="best" id="best"></p>
     <a class="ghostlink" href="car.html">Посмотреть машину вблизи</a>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.8</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.9</p>
   </div>
 </div>
 
@@ -65,7 +65,7 @@
     <div class="stats">
       <div><span>Очки</span><b id="resScore">0</b></div>
       <div><span>Впритирку</span><b id="resNear">0</b></div>
-      <div><span>Макс. скорость</span><b id="resTop">0</b></div>
+      <div><span>Круг</span><b id="resTop">1</b></div>
     </div>
     <button id="again" class="primary">Ещё раз</button>
     <button id="toMenu" class="ghost">В меню</button>
@@ -73,6 +73,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=8"></script>
+<script type="module" src="js/main.js?v=9"></script>
 </body>
 </html>

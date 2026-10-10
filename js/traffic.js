@@ -1,31 +1,29 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { laneOffset, halfWidth } from './chain.js?v=8';
-import { CAR_TYPES, makeTrafficMesh } from './carmodel.js?v=8';
+import { laneOffset, halfWidth } from './chain.js?v=9';
+import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=9';
 
-const TYPES = ['sedan', 'sedan', 'sedan', 'hatch', 'hatch', 'suv', 'suv', 'van'];
-const COLORS = [0xf2f2f0, 0xf2f2f0, 0xc4c8cc, 0xc4c8cc, 0x1b1c1f, 0x1b1c1f, 0x6b7077, 0x23395d, 0x8c1c1c, 0xd8cdb4, 0x2f4a3a, 0xe0b23a];
 const AHEAD = 520, BEHIND = 180;
 const HEAD = [1.0, 0.93, 0.78], TAIL = [0.75, 0.04, 0.03], STOP = [1.0, 0.1, 0.06], BLINK = [1.0, 0.55, 0.05];
 
 export class Traffic {
-  constructor(scene, chains, glowTex, poolTex, counts = { north: 44, south: 24 }) {
+  constructor(scene, chains, glowTex, poolTex, envMap, counts = { north: 44, south: 44 }) {
     this.chains = chains;
     this.cars = [];
     this.time = 0;
+    this.density = 1; // доля машин, которым разрешено выезжать: растёт с каждым кругом
     this.proj = { north: { i: -1 }, south: { i: -1 } };
     this.tmp = {};
     let seed = 12345;
     this.rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     for (const key of ['north', 'south']) {
       for (let n = 0; n < counts[key]; n++) {
-        const type = TYPES[Math.floor(this.rnd() * TYPES.length)];
-        const t = CAR_TYPES[type];
-        const mesh = makeTrafficMesh(type, COLORS[Math.floor(this.rnd() * COLORS.length)]);
+        const kind = pickKind(this.rnd), V = VEHICLES[kind], t = V.spec;
+        const mesh = vehicleMesh(kind, V.colors[Math.floor(this.rnd() * V.colors.length)], envMap);
         mesh.visible = false;
         scene.add(mesh);
-        this.cars.push({ key, chain: chains[key], mesh, hl: t.len / 2, hw: t.wid / 2, ly: t.belt - 0.2, active: false, s: 0, lane: 0, off: 0, v: 0, want: 0, x: 0, z: 0, dx: 0, dz: 1, prevLong: 0, changeIn: 0, blinkT: 0, blinkSide: 0, nextLane: -1, retry: 0, yieldT: 0, hurry: 0, braking: 0, latV: 0 });
+        this.cars.push({ key, chain: chains[key], mesh, kind, behave: V.behave || '', slow: V.slow || 1, rank: this.rnd(), hl: t.len / 2 + (t.bulge ?? 0.05), hw: t.wid / 2, ly: t.belt, active: false, s: 0, lane: 0, off: 0, v: 0, want: 0, x: 0, z: 0, dx: 0, dz: 1, prevLong: 0, changeIn: 0, blinkT: 0, blinkSide: 0, nextLane: -1, retry: 0, yieldT: 0, hurry: 0, braking: 0, latV: 0 });
       }
     }
     // огни: по 4 точки на машину (фары и стопы) и ещё 4 под поворотники
@@ -74,11 +72,11 @@ export class Traffic {
     const c = car.chain;
     if (s < 8 || s > c.total - 8) return false;
     c.at(s, this.tmp);
-    const lanes = this.tmp.lanes, lane = Math.floor(this.rnd() * lanes);
-    if (!this.laneFree(car, lane, s, 16, 16)) return false;
+    const lanes = this.tmp.lanes, lane = car.behave === 'bus' ? lanes - 1 : Math.floor(this.rnd() * lanes); // автобус — только в правом ряду
+    if (!this.laneFree(car, lane, s, 12 + car.hl * 2, 12 + car.hl * 2)) return false;
     car.s = s; car.lane = lane; car.nextLane = -1;
     car.off = laneOffset(lane, this.tmp.lf);
-    car.want = this.wantSpeed(lane, lanes);
+    car.want = this.wantSpeed(lane, lanes) * car.slow;
     car.v = car.want;
     car.changeIn = 4 + this.rnd() * 14;
     car.blinkT = 0; car.blinkSide = 0; car.yieldT = 0; car.hurry = 0; car.braking = 0; car.latV = 0;
@@ -130,10 +128,19 @@ export class Traffic {
   }
 
   askToYield(car) {
+    if (car.behave === 'bus') return; // автобус никуда не денется — его надо объезжать
     car.hurry = 7;
     // уже перестраивается сама — просто поторопим, иначе просим уступить
     if (car.blinkSide && car.nextLane >= 0) car.blinkT = Math.min(car.blinkT, 0.2);
     else if (!car.blinkSide) car.yieldT = 7;
+  }
+
+  // убрать машины вокруг точки (во время разворота поток не должен въехать в игрока)
+  clearNear(x, z, r) {
+    for (const car of this.cars) {
+      if (!car.active || Math.hypot(car.x - x, car.z - z) > r + car.hl) continue;
+      car.active = false; car.mesh.visible = false; car.retry = 1.5 + this.rnd();
+    }
   }
 
   reset(player) {
@@ -143,7 +150,7 @@ export class Traffic {
       const p = this.window(key, player);
       for (const car of this.cars) {
         if (car.key !== key) continue;
-        for (let k = 0; k < 8 && !car.active; k++) {
+        for (let k = 0; k < 8 && !car.active && car.rank <= this.density; k++) {
           const s = p.lo + this.rnd() * (p.hi - p.lo);
           if (Math.abs(s - p.s) < 45 && p.d < 30) continue; // не ставим машину вплотную к игроку
           this.place(car, s);
@@ -163,7 +170,7 @@ export class Traffic {
       const p = this.proj[car.key], c = car.chain;
       if (!car.active) {
         car.retry -= dt;
-        if (car.retry <= 0) {
+        if (car.retry <= 0 && car.rank <= this.density) {
           car.retry = 0.4 + this.rnd() * 0.6;
           // новая машина появляется на дальнем краю окна — туда, откуда она поедет к игроку
           const farAhead = p.facing > 0 ? p.hi - this.rnd() * 60 : p.lo + this.rnd() * 60;
@@ -206,10 +213,12 @@ export class Traffic {
       if (car.blinkSide) {
         car.blinkT -= dt;
         if (car.blinkT <= 0) {
-          if (car.nextLane >= 0 && car.nextLane < lanes) { car.lane = car.nextLane; car.want = this.wantSpeed(car.lane, lanes); }
+          if (car.nextLane >= 0 && car.nextLane < lanes) { car.lane = car.nextLane; car.want = this.wantSpeed(car.lane, lanes) * car.slow; }
           car.nextLane = -1;
           if (car.blinkT < -1.6) car.blinkSide = 0;
         }
+      } else if (car.behave === 'bus') {
+        if (car.lane < lanes - 1 && this.laneFree(car, car.lane + 1, car.s, 14, 20)) { car.nextLane = car.lane + 1; car.blinkSide = -1; car.blinkT = 1.2; } // возвращается в правый ряд
       } else if (car.yieldT > 0) {
         car.yieldT -= dt;
         // сначала вправо (полоса с большим номером), если занято — влево
@@ -223,7 +232,7 @@ export class Traffic {
           break;
         }
       } else if (car.changeIn <= 0 && lanes > 1 && car.v > 5) {
-        car.changeIn = 7 + this.rnd() * 16;
+        car.changeIn = car.behave === 'pushy' ? 3 + this.rnd() * 6 : 7 + this.rnd() * 16; // маршрутки мечутся между рядами
         const dirL = car.lane === 0 ? 1 : car.lane === lanes - 1 ? -1 : this.rnd() < 0.5 ? -1 : 1;
         const nl = car.lane + dirL;
         const playerThere = p.d < 16 && Math.abs(p.lat - laneOffset(nl, lf)) < 2.4 && Math.abs(dsP) < 28;

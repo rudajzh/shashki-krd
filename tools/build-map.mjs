@@ -14,7 +14,7 @@ const r1 = (v) => Math.round(v * 10) / 10;
 const key = (p) => p.lat.toFixed(7) + ',' + p.lon.toFixed(7);
 
 const CORRIDOR_ROADS = 60, CORRIDOR_BUILDINGS = 80; // с дороги теперь не съехать — дальние кварталы не нужны
-const KEEP = /театр драмы|Аврора|Галерея Краснодар|Шухова/; // знаковые здания оставляем, даже если они дальше
+const KEEP = /театр драмы|Аврора|Галерея Краснодар|Шухова|Marriott/; // знаковые здания оставляем, даже если они дальше
 const STREET = 'Красная улица';
 
 const ways = raw.elements.filter((e) => e.type === 'way' && e.geometry);
@@ -64,6 +64,13 @@ function buildChain(northbound) {
       len += Math.hypot(bx - ax, bz - az);
     }
     if (!best || len > best.len) best = { chain, len };
+  }
+  // Южная проезжая часть в OSM начинается только от шоссе Нефтяников: мимо «Авроры» встречный поток
+  // идёт по отрезку, который там подписан как это шоссе. Пристраиваем его в начало, чтобы круг замкнулся.
+  if (!northbound) {
+    const extra = ways.find((w) => w.id === 26940200);
+    if (extra && key(extra.geometry.at(-1)) === key(best.chain[0].geometry[0])) best.chain.unshift(extra);
+    else console.warn('не нашёлся отрезок у «Авроры» — круг не замкнётся');
   }
   const pts = [], lanes = [];
   for (const w of best.chain) {
@@ -244,6 +251,7 @@ const at = (e) => proj(e.center || e).map(r1);
 const landmarks = { fountains: [] };
 for (const e of poi) {
   const t = e.tags || {};
+  if (t.name === 'Marriott' && t.tourism === 'hotel') landmarks.hotel = [...at(e), +t['building:levels'] || 20];
   if (t.building === 'triumphal_arch') landmarks.arch = at(e);
   else if (t.historic === 'memorial' && t.name === 'Аврора') landmarks.avrora = at(e);
   else if (t.amenity === 'fountain' && e.type === 'way') {
@@ -254,7 +262,11 @@ for (const e of poi) {
 
 // арка в OSM — отношение 7636786 (building=triumphal_arch); в выгрузке POI её нет, берём центр оттуда же
 if (!landmarks.arch) landmarks.arch = [-57, -1];
-const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks };
+// развороты: у «Авроры» — по Офицерской вокруг кинотеатра (точки взяты с её осевой линии в OSM),
+// на юге — на месте, за Длинной перед гостиницей
+const turns = { north: [[366, -1397], [336, -1391], [305, -1386], [264, -1391], [241, -1385]], southZ: 1352 };
+
+const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks, turns };
 fs.writeFileSync(new URL('data/krasnaya.json', root), JSON.stringify(out));
 
 const chainLen = (c) => { let l = 0; for (let i = 2; i < c.pts.length; i += 2) l += Math.hypot(c.pts[i] - c.pts[i - 2], c.pts[i + 1] - c.pts[i - 1]); return Math.round(l); };

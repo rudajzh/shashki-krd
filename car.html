@@ -16,16 +16,20 @@
   .top { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: center; }
   .top a { color: #fff; text-decoration: none; background: rgba(255,255,255,.12); padding: 8px 12px; border-radius: 10px; font-size: 14px; }
   .top b { font-size: 15px; }
+  .kinds { position: fixed; top: max(58px, calc(env(safe-area-inset-top) + 50px)); left: 0; right: 0; display: flex; gap: 8px; padding: 0 14px; overflow-x: auto; }
+  .kinds button { flex: none; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: #fff; font: 600 13.5px/1 inherit; font-family: inherit; }
+  .kinds button.sel { background: #fff; color: #0b0d12; }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
 <canvas id="view"></canvas>
-<div class="top"><a href="./">← В игру</a><b>Образец детализации</b></div>
+<div class="top"><a href="./">← В игру</a><b>Машины</b></div>
+<div class="kinds" id="kinds"></div>
 <div class="bar">
   <div class="sw" id="sw"></div>
   <div class="info" id="info"></div>
 </div>
-<script type="module" src="js/showroom.js?v=8"></script>
+<script type="module" src="js/showroom.js?v=9"></script>
 </body>
 </html>

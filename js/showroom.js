@@ -1,6 +1,7 @@
 // Витрина одной машины: медленно крутится, пальцем или мышью можно вращать и приближать.
 import * as THREE from 'three';
-import { buildCar, nightEnvironment } from './cardetail.js?v=8';
+import { buildCar, nightEnvironment } from './cardetail.js?v=9';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=9';
 
 const COLORS = [0x1f5fd0, 0x101214, 0xd92b2b, 0xf2f2f0, 0x6d7278, 0x1f9d55, 0xf0b400];
 const canvas = document.getElementById('view');
@@ -36,6 +37,24 @@ scene.add(floor);
 let color = COLORS[0];
 const car = buildCar({ color, envMap });
 scene.add(car.root);
+// кроме машины игрока можно посмотреть любую машину потока — в том виде, в каком она едет в игре
+const NAMES = { player: 'Ваша', solaris: 'Седан А', rio: 'Седан Б', polo: 'Седан В', lux: 'Бизнес', paz: 'Маршрутка', bus: 'Автобус' };
+let shown = car.root, kind = 'player';
+function show(k) {
+  kind = k;
+  scene.remove(shown);
+  if (k === 'player') shown = car.root;
+  else { const V = VEHICLES[k]; shown = vehicleMesh(k, V.colors.includes(color) ? color : V.colors[0], envMap); }
+  scene.add(shown);
+  const len = k === 'player' ? 5 : VEHICLES[k].spec.len;
+  view.dist = Math.max(8.2, len * 1.75); view.look = k === 'bus' || k === 'paz' ? 1.4 : 0.62;
+  shadow.scale.set((k === 'player' ? 1.9 : VEHICLES[k].spec.wid) / 1.9, len / 5, 1);
+  let tris = 0, parts = 0;
+  shown.traverse((o) => { if (o.isMesh) { parts++; tris += o.geometry.attributes.position.count / 3; } });
+  document.getElementById('info').textContent = `${Math.round(tris).toLocaleString('ru-RU')} треугольников, ${parts} ${parts === 1 ? 'вызов' : 'вызовов'} отрисовки`;
+  for (const b of document.getElementById('kinds').children) b.classList.toggle('sel', b.dataset.k === k);
+  document.getElementById('sw').style.visibility = k === 'player' ? 'visible' : 'hidden';
+}
 // мягкая тень под кузовом
 const sc = document.createElement('canvas');
 sc.width = sc.height = 128;
@@ -55,12 +74,16 @@ COLORS.forEach((c) => {
   b.addEventListener('click', () => { color = c; car.mats.paint.color.setHex(c); for (const o of sw.children) o.classList.toggle('sel', o === b); });
   sw.append(b);
 });
-let parts = 0;
-car.root.traverse((o) => { if (o.isMesh) parts++; });
-document.getElementById('info').textContent = `${Math.round(car.tris).toLocaleString('ru-RU')} треугольников, ${parts} вызовов отрисовки`;
-
 // камера: вращение пальцем, приближение щипком или колесом
-const view = { yaw: 0.9, pitch: 0.22, dist: 8.2, auto: true };
+const view = { yaw: 0.9, pitch: 0.22, dist: 8.2, look: 0.62, auto: true };
+const kinds = document.getElementById('kinds');
+for (const k of Object.keys(NAMES)) {
+  const b = document.createElement('button');
+  b.textContent = NAMES[k]; b.dataset.k = k;
+  b.addEventListener('click', () => show(k));
+  kinds.append(b);
+}
+show(new URLSearchParams(location.search).get('car') || 'player');
 const ptr = new Map();
 let pinch = 0;
 canvas.addEventListener('pointerdown', (e) => { ptr.set(e.pointerId, [e.clientX, e.clientY]); canvas.setPointerCapture(e.pointerId); view.auto = false; });
@@ -97,10 +120,10 @@ function frame(now) {
   if (view.auto) view.yaw += dt * 0.35;
   const cp = Math.cos(view.pitch);
   camera.position.set(Math.sin(view.yaw) * cp * view.dist, 0.55 + Math.sin(view.pitch) * view.dist, Math.cos(view.yaw) * cp * view.dist);
-  camera.lookAt(0, 0.62, 0);
+  camera.lookAt(0, view.look, 0);
   for (const w of car.wheels) if (w.front) w.pivot.rotation.y = Math.sin(now / 2600) * 0.25;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-window.__show = { car, view, renderer, scene, camera };
+window.__show = { car, view, renderer, scene, camera, show };

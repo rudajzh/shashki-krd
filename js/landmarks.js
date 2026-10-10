@@ -1,7 +1,7 @@
 // Узнаваемые места Красной: Александровская арка, «Аврора», фонтаны, башня Шухова,
 // вывески на зданиях и синие таблички с названиями поперечных улиц.
 import * as THREE from 'three';
-import { halfWidth } from './chain.js?v=8';
+import { halfWidth } from './chain.js?v=9';
 
 // ночью знаковые объекты подсвечены: материал немного светится собственным цветом
 const L = (color, extra) => new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.28, ...extra });
@@ -298,6 +298,56 @@ function mall(scene, p, chains, textPlane) {
   scene.add(g);
 }
 
+// Высотная гостиница у южного разворота: стилобат с освещённым входом и козырьком, стеклянная башня
+// со светящимися окнами, вертикальные пилоны, подсвеченный венец и красные огни на крыше.
+function hotel(scene, x, z, levels, chains, textPlane, addSolid, addGlow) {
+  const o = {};
+  chains.north.project(x, z, -1, o);
+  const yaw = Math.atan2(o.dx, o.dz), g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = yaw; // местная ось +x смотрит на дорогу
+  const H = Math.min(72, levels * 3.3), PH = 11, TW = 17, TL = 26;
+  // окна башни: сетка 8×16, часть горит
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 256;
+  const k = c.getContext('2d');
+  k.fillStyle = '#000'; k.fillRect(0, 0, 128, 256);
+  let seed = 31;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let r = 0; r < 16; r++) for (let q = 0; q < 8; q++) {
+    if (rnd() < 0.42) { k.fillStyle = ['#ffd9a0', '#ffe7c2', '#ffc27a', '#cfe4ff'][Math.floor(rnd() * 4)]; k.globalAlpha = 0.5 + rnd() * 0.5; k.fillRect(q * 16 + 2, r * 16 + 3, 12, 10); k.globalAlpha = 1; }
+  }
+  const win = (rx, ry) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.colorSpace = THREE.SRGBColorSpace; return new THREE.MeshLambertMaterial({ color: 0x2f3b4d, emissiveMap: t, emissive: 0xffffff, emissiveIntensity: 1.2 }); };
+  const rows = Math.round((H - PH) / 3.3) / 16, roofM = new THREE.MeshBasicMaterial({ color: 0x14161a });
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(TW, H - PH, TL), [win(TL / 26, rows), win(TL / 26, rows), roofM, roofM, win(TW / 26, rows), win(TW / 26, rows)]);
+  tower.position.y = PH + (H - PH) / 2;
+  g.add(tower);
+  const stone = L(0xb9ae9c);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, stone, 1.1, H - PH + 1.5, 1.1, sx * TW / 2, PH + (H - PH + 1.5) / 2, sz * TL / 2); // пилоны по углам
+  box(g, new THREE.MeshBasicMaterial({ color: 0xffe2b0 }), TW + 0.5, 1.1, TL + 0.5, 0, H - 1.6, 0);                                       // светящийся венец
+  box(g, stone, TW + 1.4, 0.9, TL + 1.4, 0, H + 0.2, 0);
+  box(g, L(0x3a3f47), 6, 3, 8, 0, H + 2, 0);
+  // стилобат: камень, светящийся первый этаж, козырёк над входом
+  box(g, stone, 24, PH, 36, 0, PH / 2, 0);
+  box(g, new THREE.MeshBasicMaterial({ color: 0xffdca6 }), 24.3, 3.4, 30, 0, 2.2, 0);
+  for (let i = -3; i <= 3; i++) box(g, stone, 24.6, 3.6, 0.8, 0, 2.2, i * 4.6);                                                            // простенки между витринами
+  box(g, new THREE.MeshBasicMaterial({ color: 0x9cb7c9 }), 24.3, 2.2, 32, 0, 7.6, 0);                                                      // лента окон второго яруса
+  box(g, L(0x2a2d32), 7, 0.45, 12, 14.5, 4.6, 0);                                                                                           // козырёк
+  for (const sz of [-1, 1]) box(g, L(0x8a8d92), 0.3, 4.6, 0.3, 17.4, 2.3, sz * 5.4);
+  const sign = textPlane('MARRIOTT', 15, 2.6, 'transparent', '#ff3b30', 512, 'Georgia, "Times New Roman", serif');
+  sign.position.set(TW / 2 + 0.25, H - 5.5, 0);
+  sign.rotation.y = Math.PI / 2;
+  g.add(sign);
+  scene.add(g);
+  const cs = Math.cos(yaw), sn = Math.sin(yaw), pts = [];
+  for (const [lx, lz] of [[-12, -18], [12, -18], [12, 18], [-12, 18]]) pts.push(x + lx * cs + lz * sn, z - lx * sn + lz * cs);
+  addSolid(pts);
+  if (addGlow) {
+    for (const [lx, lz] of [[TW / 2, TL / 2], [-TW / 2, -TL / 2]]) addGlow(x + lx * cs + lz * sn, H + 1.4, z - lx * sn + lz * cs, 0xff2a1a, 1);   // красные огни на крыше
+    for (const lz of [-4, 0, 4]) addGlow(x + 15 * cs + lz * sn, 4.1, z - 15 * sn + lz * cs, 0xffe2b0, 1);                                      // свет под козырьком
+  }
+}
+
 const SIGN_NAMES = {
   'Вкусно — и точка': ['ВКУСНО — И ТОЧКА', 1.6, '#0b5e3b'],
   'Универмаг "Краснодар"': ['УНИВЕРМАГ «КРАСНОДАР»', 2.2, '#1f3f7a'],
@@ -397,6 +447,7 @@ export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named
   if (custom.theatre) theatre(scene, custom.theatre, nearest(bigFountain, custom.theatre) || [chains.north.x[0], chains.north.z[0]], textPlane);
   if (custom.cinema) cinema(scene, custom.cinema, lm.avrora || nearest(bigFountain, custom.cinema), textPlane);
   if (custom.mall) mall(scene, custom.mall, chains, textPlane);
+  if (lm.hotel) hotel(scene, lm.hotel[0], lm.hotel[1], lm.hotel[2], chains, textPlane, addSolid, addGlow);
   // прожекторы у арки и памятника — тёплые точки света
   if (addGlow && lm.arch) for (const [dx, dz] of [[-9, -6], [9, -6], [-9, 6], [9, 6]]) addGlow(lm.arch[0] + dx, 1.2, lm.arch[1] + dz, 0xffc27a, 0.9);
   if (addGlow && lm.avrora) for (const a of [0, 2.1, 4.2]) addGlow(lm.avrora[0] + Math.cos(a) * 7, 1.4, lm.avrora[1] + Math.sin(a) * 7, 0xffd9a8, 0.9);
