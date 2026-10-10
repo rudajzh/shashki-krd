@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -38,9 +38,15 @@
     </div>
   </div>
   <div class="pad right">
-    <button data-ctl="hand" class="small" aria-label="Ручник">Р</button>
     <button data-ctl="brake" class="brake" aria-label="Тормоз">Тормоз</button>
     <button data-ctl="gas" class="gas" aria-label="Газ">Газ</button>
+  </div>
+</div>
+
+<div id="drift" hidden>
+  <div class="driftBox">
+    <b>ЖМИ! ДЕРЖИ ЗАНОС</b>
+    <div class="driftMeter"><i id="driftBar"></i></div>
   </div>
 </div>
 
@@ -54,7 +60,7 @@
     <p class="best" id="best"></p>
     <a class="ghostlink" href="car.html">Посмотреть машину вблизи</a>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.9</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.10</p>
   </div>
 </div>
 
@@ -73,6 +79,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=9"></script>
+<script type="module" src="js/main.js?v=10"></script>
 </body>
 </html>

@@ -1,14 +1,14 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { laneOffset, halfWidth } from './chain.js?v=9';
-import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=9';
+import { laneOffset, halfWidth } from './chain.js?v=10';
+import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=10';
 
 const AHEAD = 520, BEHIND = 180;
 const HEAD = [1.0, 0.93, 0.78], TAIL = [0.75, 0.04, 0.03], STOP = [1.0, 0.1, 0.06], BLINK = [1.0, 0.55, 0.05];
 
 export class Traffic {
-  constructor(scene, chains, glowTex, poolTex, envMap, counts = { north: 44, south: 44 }) {
+  constructor(scene, chains, glowTex, poolTex, envMap, counts = { north: 50, south: 50 }) {
     this.chains = chains;
     this.cars = [];
     this.time = 0;
@@ -95,6 +95,8 @@ export class Traffic {
     p.lo = p.s - (p.facing > 0 ? BEHIND : AHEAD);
     p.hi = p.s + (p.facing > 0 ? AHEAD : BEHIND);
     p.vAlong = player.vx * p.dx + player.vz * p.dz;
+    // во время разворота держим поток там, куда игрок сейчас выедет, а не там, где он проецируется на ось
+    if (this.held && this.held.key === key) { p.facing = 1; p.lo = this.held.s0; p.hi = this.held.s1; }
     return p;
   }
 
@@ -135,6 +137,17 @@ export class Traffic {
     else if (!car.blinkSide) car.yieldT = 7;
   }
 
+  // Перед разворотом: закрепить окно потока на полосе, куда выедет игрок, и сразу расставить там машины,
+  // чтобы после разворота не ехать полминуты по пустой дороге.
+  hold(key, s0, s1, from) {
+    this.held = { key, s0, s1 };
+    for (const car of this.cars) {
+      if (car.key !== key || car.active || car.rank > this.density) continue;
+      for (let k = 0; k < 6 && !car.active; k++) this.place(car, from + this.rnd() * (s1 - 40 - from));
+    }
+  }
+  release() { this.held = null; }
+
   // убрать машины вокруг точки (во время разворота поток не должен въехать в игрока)
   clearNear(x, z, r) {
     for (const car of this.cars) {
@@ -144,6 +157,7 @@ export class Traffic {
   }
 
   reset(player) {
+    this.held = null;
     for (const key of ['north', 'south']) this.proj[key].i = -1;
     for (const car of this.cars) { car.active = false; car.mesh.visible = false; }
     for (const key of ['north', 'south']) {

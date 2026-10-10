@@ -1,13 +1,14 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=9';
-import { Car, alignSteer, steerLockAt } from './car.js?v=9';
-import { LANE_W, laneOffset, halfWidth } from './chain.js?v=9';
-import { makePlayerCar } from './playercar.js?v=9';
-import { nightEnvironment } from './cardetail.js?v=9';
-import { Traffic } from './traffic.js?v=9';
-import { Input } from './input.js?v=9';
-import { Sound } from './audio.js?v=9';
-import { Loop } from './loop.js?v=9';
+import { buildWorld } from './world.js?v=10';
+import { Car, alignSteer, steerLockAt } from './car.js?v=10';
+import { LANE_W, laneOffset, halfWidth } from './chain.js?v=10';
+import { makePlayerCar } from './playercar.js?v=10';
+import { nightEnvironment } from './cardetail.js?v=10';
+import { Traffic } from './traffic.js?v=10';
+import { Input } from './input.js?v=10';
+import { Sound } from './audio.js?v=10';
+import { Loop } from './loop.js?v=10';
+import { Smoke } from './smoke.js?v=10';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -53,7 +54,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=9')).json();
+const data = await (await fetch('data/krasnaya.json?v=10')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();
@@ -63,6 +64,7 @@ const model = makePlayerCar(color, world.glowTex, envMap); // детальная
 scene.add(model.root);
 const traffic = new Traffic(scene, world.chains, world.glowTex, world.poolTex, envMap);
 const loop = new Loop(world, data);
+const smoke = new Smoke(scene);
 const input = new Input();
 const sound = new Sound();
 const PW = { hl: model.type.len / 2, hw: model.type.wid / 2 };
@@ -104,20 +106,22 @@ function goFullscreen() {
   } catch { /* старый Safari */ }
 }
 
-// Сложность растёт от круга к кругу: на первом выезжает 60 % потока, к пятому — весь.
-const densityFor = (lap) => Math.min(1, 0.6 + 0.1 * (lap - 1));
+// Сложность растёт от круга к кругу: на первом выезжает 80 % потока, с третьего — весь.
+const densityFor = (lap) => Math.min(1, 0.8 + 0.1 * (lap - 1));
 
 function startRun() {
   goFullscreen();
   placeAtStart();
   Object.assign(G, { state: 'drive', score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0, shake: 0, lap: 1, grace: 0 });
   $('menu').hidden = true; $('result').hidden = true; $('hud').hidden = false;
+  $('drift').hidden = true;
   $('touch').hidden = !matchMedia('(pointer: coarse)').matches;
   sound.start();
 }
 
 function endRun(kind) {
   G.state = kind; G.stateT = 0;
+  $('drift').hidden = true;
   const best = store.get('best', 0), total = Math.round(G.score);
   if (total > best) store.set('best', total);
   $('resTitle').textContent = G.why === 'curb' ? 'Зацепил бордюр' : 'Авария';
@@ -173,9 +177,17 @@ function tick(dt) {
   const px = car.x, pz = car.z;
   if (driving) loop.maybeStart(car, traffic.proj);
   if (driving && loop.active) {
-    // разворот: машину ведёт игра, поток расступается
-    if (loop.active.s === 0) traffic.clearNear(car.x, car.z, loop.active.kind === 'south' ? 170 : 90);
-    traffic.clearNear(car.x, car.z, 24);
+    // разворот: машину ведёт игра, поток расступается, игрок нажатиями держит занос
+    const a = loop.active;
+    if (a.fresh) {
+      if (a.center) traffic.clearNear(a.center[0], a.center[1], 62); else traffic.clearNear(car.x, car.z, 70);
+      traffic.hold(...a.hold);
+      $('drift').hidden = false;
+    }
+    for (let k = input.takeTaps(); k > 0; k--) loop.tap();
+    traffic.clearNear(car.x, car.z, 22);
+    G.score += a.power * 260 * dt * G.lap;
+    $('driftBar').style.width = Math.round(a.power * 100) + '%';
     const done = loop.update(dt, car);
     G.grace = 1.2;
     if (done) turnDone(done);
@@ -258,17 +270,22 @@ function roadAssist() {
   return { bend: wheelbase * best.kappa * along / steerLockAt(Math.abs(car.u), car.s), pull: alignSteer(car, yaw) };
 }
 
-// разворот пройден: премия, а после южного — новый круг и поток плотнее
-function turnDone(kind) {
-  const bonus = 500 * G.lap;
+// разворот пройден: премия (за удержанный занос — больше), а после южного — новый круг и поток плотнее
+function turnDone(res) {
+  const pct = Math.round(Math.min(1, res.drift * 1.15) * 100);
+  const bonus = Math.round((300 + 900 * Math.min(1, res.drift * 1.15)) * G.lap / 10) * 10;
   G.score += bonus;
-  traffic.clearNear(car.x, car.z, 34); // на выходе из разворота никто не должен стоять вплотную
+  traffic.release();
+  traffic.clearNear(car.x, car.z, 30); // на выходе из разворота никто не должен стоять вплотную
   G.grace = 1.5;
-  if (kind === 'south') {
+  $('drift').hidden = true;
+  input.takeTaps();
+  const what = pct >= 45 ? `Дрифт ${pct}%` : 'Разворот';
+  if (res.kind === 'south') {
     G.lap++;
     traffic.density = densityFor(G.lap);
-    pop(`Круг ${G.lap} · +${bonus}`);
-  } else pop(`Разворот · +${bonus}`);
+    pop(`${what} · круг ${G.lap} · +${bonus}`);
+  } else pop(`${what} · +${bonus}`);
   G.handsOff = 9;
 }
 
@@ -296,10 +313,10 @@ function draw(dt) {
     if (w.front) w.pivot.rotation.y = car.steer;
   }
   model.setFlash(G.flashT > 0.27 || (G.flashT > 0.03 && G.flashT < 0.17) ? 1 : 0);
-  model.setBrake(G.state !== 'drive' ? true : loop.active ? loop.active.v > loop.active.speedAt(loop.active.s, loop.active.total) + 1 : inp.brake > 0 || inp.handbrake);
+  model.setBrake(G.state !== 'drive' ? true : loop.active ? loop.active.v > loop.active.speedAt(loop.active.s) + 1 : inp.brake > 0 || inp.handbrake);
 
   // камера за машиной: поворачивается с запаздыванием, чтобы занос был виден
-  let d = car.yaw - G.camYaw;
+  let d = (loop.active ? loop.active.yaw : car.yaw) - G.camYaw; // в заносе камера идёт по траектории, кузов поворачивается на глазах
   d = Math.atan2(Math.sin(d), Math.cos(d));
   G.camYaw += d * Math.min(1, dt * 5.5);
   const cx = Math.sin(G.camYaw), cz = Math.cos(G.camYaw);
@@ -326,6 +343,12 @@ function draw(dt) {
     const left = G.left ?? 0;
     $('left').textContent = left >= 1000 ? (left / 1000).toFixed(1).replace('.', ',') + ' км' : Math.round(left / 10) * 10 + ' м';
   }
+  // дым из-под задних колёс в заносе
+  if (G.state === 'drive' && car.slip > 0.3 && v > 6) {
+    const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), lx = fz, lz = -fx;
+    for (const s of [-1, 1]) if (Math.random() < car.slip * 0.9) smoke.emit(car.x - fx * 1.4 + lx * s * 0.8, 0.25, car.z - fz * 1.4 + lz * s * 0.8, car.vx * 0.25, car.vz * 0.25, car.slip);
+  }
+  smoke.update(dt, camera, renderer.domElement.height);
   sound.update(car.rpm, G.state === 'drive' ? inp.throttle : 0, car.slip, v, G.state === 'drive');
   renderer.render(scene, camera);
 }
@@ -375,4 +398,4 @@ document.addEventListener('visibilitychange', () => { last = performance.now(); 
 $('install').hidden = !(isIOS && !standalone);
 showMenu();
 requestAnimationFrame(frame);
-window.__game = { G, car, world, traffic, input, tick, draw, startRun, renderer, scene, camera, LANE_W };
+window.__game = { G, car, world, traffic, input, loop, tick, draw, startRun, renderer, scene, camera, LANE_W };

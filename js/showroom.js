@@ -1,7 +1,7 @@
 // Витрина одной машины: медленно крутится, пальцем или мышью можно вращать и приближать.
 import * as THREE from 'three';
-import { buildCar, nightEnvironment } from './cardetail.js?v=9';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=9';
+import { buildCar, nightEnvironment } from './cardetail.js?v=10';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=10';
 
 const COLORS = [0x1f5fd0, 0x101214, 0xd92b2b, 0xf2f2f0, 0x6d7278, 0x1f9d55, 0xf0b400];
 const canvas = document.getElementById('view');

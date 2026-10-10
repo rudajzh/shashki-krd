@@ -1,7 +1,7 @@
 // Узнаваемые места Красной: Александровская арка, «Аврора», фонтаны, башня Шухова,
 // вывески на зданиях и синие таблички с названиями поперечных улиц.
 import * as THREE from 'three';
-import { halfWidth } from './chain.js?v=9';
+import { halfWidth } from './chain.js?v=10';
 
 // ночью знаковые объекты подсвечены: материал немного светится собственным цветом
 const L = (color, extra) => new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.28, ...extra });
@@ -394,7 +394,8 @@ function wallSign(scene, b, spec, chains, textPlane) {
   if (!best || best.d > 230) return;
   const w = Math.min(best.len * 0.85, text.length * sh * 0.68 + sh);
   const h = Math.min(sh, w / text.length * 1.5);
-  const m = textPlane(text, w, h, bg, '#ffffff');
+  const m = textPlane(text, w, h, 'transparent', '#ffe9c4'); // светящиеся буквы без плашки
+  void bg;
   const y = b.h >= h + 5 ? b.h - h / 2 - 0.9 : b.h + h / 2 + 0.25; // на низком доме — над крышей
   m.position.set(best.mx + best.nx * 0.3, y, best.mz + best.nz * 0.3);
   m.rotation.y = Math.atan2(best.nx, best.nz);
@@ -410,26 +411,64 @@ const shortStreet = (n) => n
   .replace(/^(.+)\s+переулок$/, 'пер. $1')
   .replace(/^шоссе\s+(.+)$/, 'ш. $1');
 
-// синяя табличка над правым краем дороги за 30 м до перекрёстка
-function streetSign(scene, c, name, chain, textPlane, postMat) {
+// название поперечной улицы — парящая над дорогой надпись перед перекрёстком, без столбов и табличек
+function streetSign(scene, c, name, chain, textPlane) {
   const o = {};
   chain.project(c.x, c.z, -1, o);
-  if (o.s < 45) return;
-  chain.at(o.s - 30, o);
-  const edge = halfWidth(o.lf) + 1.0, rx = -o.dz, rz = o.dx; // вправо от направления движения
-  const g = new THREE.Group();
-  const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 6.6, 0.22), postMat);
-  post.position.y = 3.3; g.add(post);
-  const text = shortStreet(name), w = Math.max(4.2, text.length * 0.52 + 1.2);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.16, 0.16), postMat);
-  arm.position.set(-w / 2, 6.5, 0); g.add(arm); // −x в осях таблички — в сторону дороги
-  const board = textPlane(text, w, 1.15, '#1d4fa8', '#ffffff');
-  board.position.set(-w / 2 - 0.3, 5.75, 0.12);
-  g.add(board);
-  g.position.set(o.x + rx * edge, 0, o.z + rz * edge);
-  // доска смотрит навстречу движению, консоль тянется над дорогой
-  g.rotation.y = Math.atan2(-o.dx, -o.dz);
+  if (o.s < 60) return;
+  chain.at(o.s - 22, o);
+  const text = shortStreet(name), h = 1.25, w = text.length * h * 0.6 + 0.6;
+  const m = textPlane(text, w, h, 'transparent', '#ffffff', 512);
+  m.material.side = THREE.FrontSide;      // со встречной стороны надпись не видна задом наперёд
+  m.material.opacity = 0.82; m.material.transparent = true; m.material.alphaTest = 0.2; m.material.fog = false;
+  m.position.set(o.x, 6.4, o.z);
+  m.rotation.y = Math.atan2(-o.dx, -o.dz); // лицом к подъезжающим
+  scene.add(m);
+}
+
+// длинный прямоугольный фонтан у «Авроры»: чаша вдоль сквера, два ряда струй, подсветка
+function pool(scene, x, z, yaw, addSolid, addGlow) {
+  const g = new THREE.Group(), W = 15, Ln = 58;
+  box(g, STONE, W + 1.2, 0.7, Ln + 1.2, 0, 0.35, 0);
+  box(g, new THREE.MeshBasicMaterial({ color: 0x2a7fb8 }), W, 0.1, Ln, 0, 0.72, 0);
+  for (let i = 0; i < 9; i++) for (const sx of [-1, 1]) {
+    const j = new THREE.Mesh(new THREE.ConeGeometry(0.35, 3.2 + (i % 3) * 1.4, 6), JET);
+    j.position.set(sx * 3.4, 0.7 + (3.2 + (i % 3) * 1.4) / 2, -Ln / 2 + 5 + i * (Ln - 10) / 8);
+    g.add(j);
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = yaw;
   scene.add(g);
+  const c = Math.cos(yaw), s = Math.sin(yaw), pts = [];
+  for (const [lx, lz] of [[-W / 2 - 0.6, -Ln / 2 - 0.6], [W / 2 + 0.6, -Ln / 2 - 0.6], [W / 2 + 0.6, Ln / 2 + 0.6], [-W / 2 - 0.6, Ln / 2 + 0.6]]) pts.push(x + lx * c + lz * s, z - lx * s + lz * c);
+  addSolid(pts);
+  if (addGlow) for (const lz of [-20, -7, 7, 20]) addGlow(x + lz * s, 1.4, z + lz * c, 0x7fd0ff, 0.8);
+}
+
+// цветочные часы: наклонённая к дороге клумба-циферблат с кольцами цветов, метками часов и стрелками
+function flowerClock(scene, x, z, chains, addGlow) {
+  const o = {};
+  chains.south.project(x, z, -1, o);
+  const P = chains.south, i = o.i, tx = P.x[i] - x, tz = P.z[i] - z; // в сторону дороги
+  const g = new THREE.Group(), face = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.atan2(tx, tz);
+  face.rotation.x = -(Math.PI / 2 - 0.45); // наклон к зрителю
+  face.position.y = 1.5;
+  const B = (c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide });
+  const ring = (r0, r1, c, zf) => { const m = new THREE.Mesh(r0 > 0 ? new THREE.RingGeometry(r0, r1, 40) : new THREE.CircleGeometry(r1, 40), B(c)); m.position.z = zf; face.add(m); };
+  ring(0, 5.6, 0x2e5a2f, 0); ring(4.5, 5.2, 0xb8283a, 0.02); ring(3.3, 3.9, 0xd9a520, 0.02); ring(1.6, 2.3, 0xc85a9a, 0.02); ring(0, 0.5, 0xe9e2d0, 0.03);
+  for (let h = 0; h < 12; h++) { // метки часов
+    const a = h / 12 * Math.PI * 2, m = new THREE.Mesh(new THREE.PlaneGeometry(h % 3 ? 0.22 : 0.4, 0.75), B(0xf2efe6));
+    m.position.set(Math.sin(a) * 4.85, Math.cos(a) * 4.85, 0.05); m.rotation.z = -a; face.add(m);
+  }
+  const hand = (len, wdt, a) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(wdt, len), B(0xf6f3ea)); m.position.set(Math.sin(a) * len / 2, Math.cos(a) * len / 2, 0.08); m.rotation.z = -a; face.add(m); };
+  hand(3.0, 0.34, -1.05); hand(4.3, 0.2, 1.05); // «десять минут одиннадцатого»
+  g.add(face);
+  const mound = new THREE.Mesh(new THREE.CylinderGeometry(6.2, 6.6, 0.5, 28), STONE);
+  mound.position.y = 0.25; g.add(mound);
+  scene.add(g);
+  if (addGlow) { const l = Math.hypot(tx, tz) || 1; for (const k of [-1, 1]) addGlow(x + tx / l * 6.5 + tz / l * k * 3, 0.8, z + tz / l * 6.5 - tx / l * k * 3, 0xfff0cf, 0.8); }
 }
 
 export const CUSTOM_BUILDINGS = { theatre: 'Краснодарский академический театр драмы им. Горького', cinema: 'Кинотеатр «Аврора»', mall: 'Галерея Краснодар' };
@@ -441,7 +480,13 @@ export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named
     arch(scene, lm.arch[0], lm.arch[1], Math.atan2(o.dx, o.dz), addSolid);
   }
   if (lm.avrora) avrora(scene, lm.avrora[0], lm.avrora[1], addSolid);
-  for (const [x, z, r] of lm.fountains || []) fountain(scene, x, z, r, addSolid);
+  for (const [x, z, r] of lm.fountains || []) {
+    if (r > 8 && lm.avrora && Math.hypot(x - lm.avrora[0], z - lm.avrora[1]) < 220) { // у «Авроры» фонтан длинный, прямоугольный
+      chains.north.project(x, z, -1, o);
+      pool(scene, x, z, Math.atan2(o.dx, o.dz), addSolid, addGlow);
+    } else fountain(scene, x, z, r, addSolid);
+  }
+  if (lm.clock) flowerClock(scene, lm.clock[0], lm.clock[1], chains, addGlow);
   if (shukhov) shukhovTower(scene, shukhov[0], shukhov[1]);
   const bigFountain = (lm.fountains || []).filter((f) => f[2] > 8);
   if (custom.theatre) theatre(scene, custom.theatre, nearest(bigFountain, custom.theatre) || [chains.north.x[0], chains.north.z[0]], textPlane);
@@ -458,6 +503,5 @@ export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named
     done.add(b.n);
     wallSign(scene, b, spec, chains, textPlane);
   }
-  const postMat = new THREE.MeshLambertMaterial({ color: 0x6b7078 });
-  for (const c of data.crossings || []) streetSign(scene, c, c.n, chains[c.k], textPlane, postMat);
+  for (const c of data.crossings || []) streetSign(scene, c, c.n, chains[c.k], textPlane);
 }

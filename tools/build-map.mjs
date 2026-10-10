@@ -143,9 +143,28 @@ function resample(pts, lanes, step) {
 
 const chains = { north: buildChain(true), south: buildChain(false) };
 
+// Разворот у «Авроры» в жизни — это левый поворот с Красной на Офицерскую, квартал на запад и ещё раз налево
+// на встречную полосу. Сшиваем эти куски OSM в одну дорогу: по ней пойдёт машина и по ней рисуется разметка.
+function buildLink(ids) {
+  const pts = [], lanes = [];
+  for (const id of ids) {
+    const w = ways.find((x) => x.id === id);
+    if (!w) { console.warn('нет отрезка', id); continue; }
+    usedInChains.add(id);
+    const n = Math.max(2, Math.min(3, +w.tags.lanes || 2));
+    w.geometry.forEach((p, i) => {
+      if (pts.length && i === 0) return;
+      if (pts.length) lanes.push(n);
+      pts.push(proj(p));
+    });
+  }
+  return resample(pts, lanes, 5);
+}
+const link = buildLink([26942032, 42442416, 47075255, 293181760, 37349718]);
+
 // ---------- расстояние до Красной ----------
 const chainPts = [];
-for (const c of Object.values(chains)) for (let i = 0; i < c.pts.length; i += 2) chainPts.push([c.pts[i], c.pts[i + 1]]);
+for (const c of [...Object.values(chains), link]) for (let i = 0; i < c.pts.length; i += 2) chainPts.push([c.pts[i], c.pts[i + 1]]);
 function distToStreet(x, z) {
   let best = Infinity;
   for (let i = 0; i < chainPts.length; i += 3) {
@@ -262,11 +281,12 @@ for (const e of poi) {
 
 // арка в OSM — отношение 7636786 (building=triumphal_arch); в выгрузке POI её нет, берём центр оттуда же
 if (!landmarks.arch) landmarks.arch = [-57, -1];
-// развороты: у «Авроры» — по Офицерской вокруг кинотеатра (точки взяты с её осевой линии в OSM),
-// на юге — на месте, за Длинной перед гостиницей
-const turns = { north: [[366, -1397], [336, -1391], [305, -1386], [264, -1391], [241, -1385]], southZ: 1352 };
+// южный разворот — на месте, за Длинной перед гостиницей
+const turns = { southZ: 1352 };
+// цветочные часы у Гаврилова (в OSM — точка «Цветочные часы», в выгрузке достопримечательностей её нет)
+landmarks.clock = [76, -837];
 
-const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks, turns };
+const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks, turns, link };
 fs.writeFileSync(new URL('data/krasnaya.json', root), JSON.stringify(out));
 
 const chainLen = (c) => { let l = 0; for (let i = 2; i < c.pts.length; i += 2) l += Math.hypot(c.pts[i] - c.pts[i - 2], c.pts[i + 1] - c.pts[i - 1]); return Math.round(l); };

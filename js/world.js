@@ -2,8 +2,8 @@
 // и витринами, бульвар, фонари с пятнами света, светофоры, ограждения боковых улиц.
 // Отдаёт проверки столкновений: со зданиями (hitsSolid) и с бордюром (offRoad).
 import * as THREE from 'three';
-import { Chain, LANE_W, halfWidth } from './chain.js?v=9';
-import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=9';
+import { Chain, LANE_W, halfWidth } from './chain.js?v=10';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=10';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -199,23 +199,6 @@ function textPlane(text, w, h, bg, fg, res = 512, font = 'system-ui, -apple-syst
   return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide, ...see }));
 }
 
-function gate(scene, x, z, dx, dz, width, text, bg) {
-  const g = new THREE.Group();
-  const post = new THREE.MeshLambertMaterial({ color: 0x2b2f36 });
-  for (const s of [-1, 1]) {
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 7.5, 0.5), post);
-    p.position.set(s * (width / 2 + 0.6), 3.75, 0);
-    g.add(p);
-  }
-  const banner = textPlane(text, width + 1.2, 1.8, bg, '#ffffff', 1024);
-  banner.position.y = 6.6;
-  banner.rotation.y = Math.PI;
-  g.add(banner);
-  g.position.set(x, 0, z);
-  g.rotation.y = Math.atan2(dx, dz);
-  scene.add(g);
-}
-
 export function buildWorld(data, scene) {
   const chains = { north: new Chain(data.chains.north.pts, data.chains.north.lf), south: new Chain(data.chains.south.pts, data.chains.south.lf) };
   const N = chains.north, S = chains.south, other = { north: S, south: N };
@@ -264,6 +247,13 @@ export function buildWorld(data, scene) {
     return false;
   };
 
+  // точка лежит на асфальте связки у «Авроры»? (нужно раньше, чем связка нарисована)
+  const nearLinkLate = (x, z) => {
+    const L = data.link;
+    for (let i = 0; i < L.pts.length; i += 2) if (Math.hypot(L.pts[i] - x, L.pts[i + 1] - z) < halfWidth(L.lf[i / 2]) + 0.4) return true;
+    return false;
+  };
+
   // ---------- дороги ----------
   const rm = new Mesher(), mm = new Mesher(), cm = new Mesher();
   const side = C(PAL.side), asphalt = C(PAL.asphalt), line = C(PAL.line), curb = C(PAL.curb), curbSide = C(PAL.curbSide), walk = C(PAL.walk), yellow = C(PAL.yellow);
@@ -301,7 +291,8 @@ export function buildWorld(data, scene) {
     };
     for (const sign of [1, -1]) {
       const open = new Uint8Array(n);
-      for (let i = 0; i < n; i++) open[i] = onOther(i, sign) ? 1 : 0;
+      const edgeAll = offsetLine(p, (i) => sign * (half(i) + 0.3));
+      for (let i = 0; i < n; i++) open[i] = onOther(i, sign) || nearLinkLate(edgeAll[i * 2], edgeAll[i * 2 + 1]) ? 1 : 0;
       const skipSeg = (i) => open[i] || open[i + 1];
       dashed(mm, offsetLine(p, (i) => sign * lf[i] / 2 * LANE_W), 0.075, 0.08, line, 4, 0, skip);
       ribbon(cm, p, () => 0.16, 0.17, curb, (i) => sign * (half(i) + 0.16), skipSeg);
@@ -316,6 +307,43 @@ export function buildWorld(data, scene) {
       if (sign < 0) ribbon(cm, p, () => 1.7, 0.17, walk, (i) => -(half(i) + 0.32 + 1.7), skipSeg);
     }
   }
+  // связка разворота у «Авроры»: настоящая дорога с полосами, сплошными по краям и бордюрами
+  const LK = data.link, lkN = LK.pts.length / 2;
+  const nearLink = (x, z, pad = 0) => {
+    for (let i = 0; i < lkN; i++) if (Math.hypot(LK.pts[i * 2] - x, LK.pts[i * 2 + 1] - z) < halfWidth(LK.lf[i]) + pad) return true;
+    return false;
+  };
+  const onMain = (x, z, pad = 0.2) => {
+    for (const ch of [N, S]) { ch.project(x, z, -1, tmp); if (!tmp.past && Math.abs(tmp.lat) < halfWidth(tmp.lf) + pad) return true; }
+    return false;
+  };
+  {
+    const p = LK.pts, lf = LK.lf, half = (i) => halfWidth(lf[i]);
+    ribbon(rm, p, half, 0.05, asphalt);
+    for (let j = 1; j <= 2; j++) {
+      let from = -1;
+      for (let i = 0; i <= lkN; i++) {
+        const ok = i < lkN && lf[i] - j >= 0.5;
+        if (ok && from < 0) from = i;
+        if (!ok && from >= 0) { const f0 = from; if (i - f0 >= 2) dashed(mm, offsetLine(p.slice(f0 * 2, i * 2), (k) => (lf[f0 + k] / 2 - j) * LANE_W), 0.075, 0.08, line, 3, 6, (x, z) => onMain(x, z)); from = -1; }
+      }
+    }
+    for (const sign of [1, -1]) {
+      const edge = offsetLine(p, (i) => sign * half(i)), open = new Uint8Array(lkN);
+      for (let i = 0; i < lkN; i++) open[i] = onMain(edge[i * 2], edge[i * 2 + 1], 1.2) ? 1 : 0;
+      const skipSeg = (i) => open[i] || open[i + 1];
+      dashed(mm, offsetLine(p, (i) => sign * lf[i] / 2 * LANE_W), 0.075, 0.08, line, 4, 0, (x, z) => onMain(x, z, 1));
+      ribbon(cm, p, () => 0.16, 0.17, curb, (i) => sign * (half(i) + 0.16), skipSeg);
+      for (let i = 0; i < lkN - 1; i++) {
+        if (skipSeg(i)) continue;
+        const ax = edge[i * 2], az = edge[i * 2 + 1], bx = edge[i * 2 + 2], bz = edge[i * 2 + 3];
+        cm.tri(ax, 0.05, az, bx, 0.05, bz, bx, 0.17, bz, curbSide);
+        cm.tri(ax, 0.05, az, bx, 0.17, bz, ax, 0.17, az, curbSide);
+      }
+      ribbon(cm, p, () => 1.7, 0.17, walk, (i) => sign * (half(i) + 0.32 + 1.7), skipSeg);
+    }
+  }
+
   // «зебры», стоп-линии и жёлтая «вафельница» на Северной
   for (const c of crossings) {
     const ch = chains[c.k];
@@ -436,19 +464,49 @@ export function buildWorld(data, scene) {
   scene.add(shops);
 
   // ---------- бульвар и деревья ----------
-  let boulevardLamps = [];
+  let boulevardLamps = [], plaza = null;
   const treePos = [];
   for (let i = 0; i < data.trees.length; i += 2) treePos.push([data.trees[i], data.trees[i + 1]]);
   const bm = new Mesher(), pm = new Mesher(), path = C(PAL.path);
   const walkLamps = [], benches = [];
-  let lastStrip = null, hint = -1;
+  let lastStrip = null, hint = -1, lastPark = null, lastCorner = null;
+  // занято ли место: дом, площадь перед кинотеатром, фонтан, памятник
+  const insideBuilding = (x, z) => { const list = grid.get(Math.floor(x / cell) + ',' + Math.floor(z / cell)); if (list) for (const k of list) if (pointInPoly(polys[k], x, z)) return true; return false; };
+  const keepOut = [];
+  for (const f of data.landmarks.fountains || []) keepOut.push([f[0], f[1], f[2] > 8 ? 36 : f[2] + 2]);
+  if (data.landmarks.avrora) keepOut.push([data.landmarks.avrora[0], data.landmarks.avrora[1], 12]);
+  if (custom.cinema) { let cx = 0, cz = 0; const k = custom.cinema.length / 2; for (let j = 0; j < k; j++) { cx += custom.cinema[j * 2] / k; cz += custom.cinema[j * 2 + 1] / k; } keepOut.push([cx, cz, 62]); plaza = [cx, cz]; }
+  const blocked = (x, z, pad) => insideBuilding(x, z) || keepOut.some((k) => Math.hypot(k[0] - x, k[1] - z) < k[2] + pad);
   for (let i = 0; i < N.n; i += 2) {
     S.project(N.x[i], N.z[i], hint, tmp);
     if (hint < 0 || tmp.d > 80) S.project(N.x[i], N.z[i], -1, tmp);
     hint = tmp.i;
     const wN = halfWidth(N.lf[i]), wS = halfWidth(tmp.lf);
     const free = tmp.d - wN - wS;
-    if (free < 6 || tmp.d > 70 || tmp.past) continue;
+    if (free < 6 || tmp.past) continue;
+    if (tmp.d > 70) { // широкий сквер: газон, деревья россыпью, диагональные дорожки, фонари
+      if (tmp.d > 165) continue;
+      const ax = N.x[i], az = N.z[i], dist = tmp.d;
+      S.at(tmp.s, o);
+      const ox = o.x, oz = o.z, at = (fromN) => { const t = fromN / dist; return [ax + (ox - ax) * t, az + (oz - az) * t]; };
+      const strip = { i, a: at(wN + 0.4), b: at(dist - wS - 0.4) }, step = Math.round(i / 2);
+      if (lastPark && i - lastPark.i === 2) bm.flatQuad(lastPark.a, strip.a, strip.b, lastPark.b, 0.03, lawn);
+      lastPark = strip;
+      for (let r = wN + 5 + (step % 2) * 4; r < dist - wS - 4; r += 9.5) { // деревья
+        const [tx, tz] = at(r + (rnd() - 0.5) * 3);
+        if (!blocked(tx, tz, 3)) treePos.push([tx + (rnd() - 0.5) * 3, tz + (rnd() - 0.5) * 3]);
+      }
+      if (step % 10 === 0) { // дорожки идут зигзагом от одной стороны к другой
+        const corner = at((step / 10) % 2 ? wN + 5 : dist - wS - 5);
+        if (lastCorner && !blocked(corner[0], corner[1], 0)) {
+          const dx = corner[0] - lastCorner[0], dz = corner[1] - lastCorner[1], l = Math.hypot(dx, dz) || 1, nx = dz / l * 1.6, nz = -dx / l * 1.6;
+          pm.flatQuad([lastCorner[0] + nx, lastCorner[1] + nz], [corner[0] + nx, corner[1] + nz], [corner[0] - nx, corner[1] - nz], [lastCorner[0] - nx, lastCorner[1] - nz], 0.035, path);
+          for (const t of [0.2, 0.5, 0.8]) { const lx = lastCorner[0] + dx * t + nx * 1.5, lz = lastCorner[1] + dz * t + nz * 1.5; if (!blocked(lx, lz, 1)) walkLamps.push([lx, lz, 0]); }
+        }
+        lastCorner = corner;
+      }
+      continue;
+    }
     const ax = N.x[i], az = N.z[i], dist = tmp.d;
     S.at(tmp.s, o);
     const ox = o.x, oz = o.z;
@@ -500,6 +558,7 @@ export function buildWorld(data, scene) {
   trunks.frustumCulled = crowns.frustumCulled = false;
   scene.add(trunks, crowns);
 
+  if (plaza) disc(pm, plaza[0], plaza[1], 58, 0.036, path); // мощёная площадь вокруг кинотеатра
   // мебель бульвара — пачками
   {
     const many = (geo, mat, list, y = 0) => {
@@ -608,20 +667,10 @@ export function buildWorld(data, scene) {
   batch(new THREE.BoxGeometry(0.16, 4.6, 0.16), lampMat, inst.pole);
   batch(new THREE.BoxGeometry(0.42, 1.2, 0.36), new THREE.MeshLambertMaterial({ color: 0x1a1c1f }), inst.head);
 
-  // ---------- старт у театра драмы и финиш у «Авроры» — на северной проезжей части ----------
-  const a = {}, bb = {};
+  // старт — у театра драмы, на северной проезжей части
+  const a = {};
   N.project(data.marks.theatre[0], data.marks.theatre[1], -1, a);
-  N.project(data.marks.avrora[0], data.marks.avrora[1], -1, bb);
   const startS = a.s;
-  N.at(startS + 14, o);
-  gate(scene, o.x, o.z, o.dx, o.dz, o.lf * LANE_W, 'СТАРТ · ТЕАТР ДРАМЫ', '#1f6feb');
-  // указатели перед разворотами: у «Авроры» и перед гостиницей на юге
-  N.at(N.total - 95, o);
-  gate(scene, o.x, o.z, o.dx, o.dz, o.lf * LANE_W, '↰ РАЗВОРОТ · АВРОРА', '#d1242f');
-  let iS = 0, dS = Infinity;
-  for (let i = 0; i < S.n; i++) { const d = Math.abs(S.z[i] - data.turns.southZ); if (d < dS) { dS = d; iS = i; } }
-  S.at(S.cum[iS] - 60, o);
-  gate(scene, o.x, o.z, o.dx, o.dz, o.lf * LANE_W, '↰ РАЗВОРОТ', '#d1242f');
 
   buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov, custom, addGlow });
 

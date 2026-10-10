@@ -2,16 +2,19 @@
 export class Input {
   constructor() {
     this.keys = new Set();
-    this.touch = { left: false, right: false, gas: false, brake: false, hand: false, flash: false };
+    this.touch = { left: false, right: false, gas: false, brake: false, flash: false };
+    this.taps = 0; // нажатия «держать занос», накопленные с прошлого кадра
     this.flashQueued = false; // нажатие «моргнуть» ждёт, пока игра его заберёт
     this.override = null; // для автотестов
     addEventListener('keydown', (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
       if ((e.code === 'KeyF' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') && !e.repeat) this.flashQueued = true;
+      if (!e.repeat && ['Space', 'ArrowUp', 'KeyW', 'Enter'].includes(e.code)) this.taps++;
       this.keys.add(e.code);
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => { this.keys.clear(); for (const k in this.touch) this.touch[k] = false; });
+    document.getElementById('drift')?.addEventListener('pointerdown', (e) => { e.preventDefault(); this.taps++; });
     for (const el of document.querySelectorAll('[data-ctl]')) {
       const name = el.dataset.ctl;
       const set = (v) => (e) => { e.preventDefault(); if (v && name === 'flash') this.flashQueued = true; this.touch[name] = v; el.classList.toggle('on', v); if (v) el.setPointerCapture?.(e.pointerId); };
@@ -22,6 +25,7 @@ export class Input {
     }
   }
 
+  takeTaps() { const t = this.taps; this.taps = 0; return t; }
   takeFlash() { const f = this.flashQueued; this.flashQueued = false; return f; }
 
   down(...codes) { return codes.some((c) => this.keys.has(c)); }
@@ -33,7 +37,7 @@ export class Input {
     out.steer = (l ? 1 : 0) - (r ? 1 : 0);
     out.throttle = this.down('ArrowUp', 'KeyW') || t.gas ? 1 : 0;
     out.brake = this.down('ArrowDown', 'KeyS') || t.brake ? 1 : 0;
-    out.handbrake = this.down('Space') || t.hand;
+    out.handbrake = false; // ручника в игре нет: занос — только на разворотах
     return out;
   }
 }
