@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=7';
-import { Car, alignSteer, steerLockAt } from './car.js?v=7';
-import { LANE_W, laneOffset, halfWidth } from './chain.js?v=7';
-import { makePlayerCar } from './carmodel.js?v=7';
-import { Traffic } from './traffic.js?v=7';
-import { Input } from './input.js?v=7';
-import { Sound } from './audio.js?v=7';
+import { buildWorld } from './world.js?v=8';
+import { Car, alignSteer, steerLockAt } from './car.js?v=8';
+import { LANE_W, laneOffset, halfWidth } from './chain.js?v=8';
+import { makePlayerCar } from './playercar.js?v=8';
+import { nightEnvironment } from './cardetail.js?v=8';
+import { Traffic } from './traffic.js?v=8';
+import { Input } from './input.js?v=8';
+import { Sound } from './audio.js?v=8';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -51,17 +52,12 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=7')).json();
+const data = await (await fetch('data/krasnaya.json?v=8')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();
 let color = store.get('color', COLORS[0]);
-const model = makePlayerCar(color, world.glowTex, world.poolTex);
-// фары игрока освещают дома и машины впереди
-const lamp = new THREE.SpotLight(0xfff0d0, 2600, 110, 0.5, 0.75, 1.7);
-lamp.position.set(0, 1.1, 1.6);
-lamp.target.position.set(0, 0.2, 40);
-model.root.add(lamp, lamp.target);
+const model = makePlayerCar(color, world.glowTex, nightEnvironment(renderer)); // детальная машина со своим светом
 scene.add(model.root);
 const traffic = new Traffic(scene, world.chains, world.glowTex, world.poolTex);
 const input = new Input();
@@ -268,7 +264,7 @@ function draw(dt) {
   model.chassis.rotation.x = G.pitch;
   G.wheelSpin += car.u / t.wheel * dt;
   for (const w of model.wheels) {
-    w.mesh.rotation.x = G.wheelSpin;
+    w.mesh.rotation.x = G.wheelSpin * (w.side || 1); // правое колесо развёрнуто, крутится «в другую сторону»
     if (w.front) w.pivot.rotation.y = car.steer;
   }
   model.setFlash(G.flashT > 0.27 || (G.flashT > 0.03 && G.flashT < 0.17) ? 1 : 0);
@@ -281,7 +277,7 @@ function draw(dt) {
   const cx = Math.sin(G.camYaw), cz = Math.cos(G.camYaw);
   // после аварии камера отъезжает вверх, чтобы не оказаться внутри чужой машины
   G.lift += ((G.state === 'crash' ? 1 : 0) - G.lift) * Math.min(1, dt * 3);
-  const dist = 5.3 + Math.min(1.9, v * 0.028) + G.lift * 3.5, height = 1.95 + Math.min(0.35, v * 0.005) + G.lift * 4.5;
+  const dist = 6.0 + Math.min(1.9, v * 0.028) + G.lift * 3.5, height = 1.95 + Math.min(0.35, v * 0.005) + G.lift * 4.5;
   G.shake *= Math.exp(-dt * 4);
   const sh = G.shake + Math.max(0, v - 22) * 0.0011;
   camera.position.set(car.x - cx * dist + (Math.random() - 0.5) * sh, height + (Math.random() - 0.5) * sh, car.z - cz * dist + (Math.random() - 0.5) * sh);

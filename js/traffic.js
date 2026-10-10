@@ -1,8 +1,8 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { laneOffset, halfWidth } from './chain.js?v=7';
-import { CAR_TYPES, makeTrafficMesh } from './carmodel.js?v=7';
+import { laneOffset, halfWidth } from './chain.js?v=8';
+import { CAR_TYPES, makeTrafficMesh } from './carmodel.js?v=8';
 
 const TYPES = ['sedan', 'sedan', 'sedan', 'hatch', 'hatch', 'suv', 'suv', 'van'];
 const COLORS = [0xf2f2f0, 0xf2f2f0, 0xc4c8cc, 0xc4c8cc, 0x1b1c1f, 0x1b1c1f, 0x6b7077, 0x23395d, 0x8c1c1c, 0xd8cdb4, 0x2f4a3a, 0xe0b23a];
@@ -52,10 +52,12 @@ export class Traffic {
     this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.v3 = new THREE.Vector3(); this.s3 = new THREE.Vector3(); this.up = new THREE.Vector3(0, 1, 0);
   }
 
+  // У каждого ряда своя скорость: левый самый быстрый, каждый следующий вправо — на ~13 км/ч медленнее.
+  // Ряды постоянно смещаются друг относительно друга, поэтому «стенка» из машин долго не держится.
+  // Внутри ряда разброс маленький, чтобы машины не сбивались в хвост за самой медленной.
   wantSpeed(lane, lanes) {
-    // левая полоса быстрее правой
-    const base = 11 + (lanes - 1 - lane) * 1.6;
-    return base + this.rnd() * 5;
+    const fromRight = lanes - 1 - lane; // 0 — крайний правый ряд
+    return 12.2 + fromRight * 3.6 + (this.rnd() - 0.5) * 1.0;
   }
 
   laneFree(car, lane, s, back, fwd) {
@@ -114,12 +116,24 @@ export class Traffic {
       }
     }
     if (best) {
-      best.hurry = 7;
-      // уже перестраивается сама — просто поторопим, иначе просим уступить
-      if (best.blinkSide && best.nextLane >= 0) best.blinkT = Math.min(best.blinkT, 0.2);
-      else if (!best.blinkSide) best.yieldT = 7;
+      this.askToYield(best);
+      // «по цепочке»: машина прямо перед ней тоже уходит, иначе уступившей некуда ускоряться
+      let next = null, gap = 28;
+      for (const car of this.cars) {
+        if (car === best || !car.active || car.key !== best.key || car.lane !== best.lane) continue;
+        const d = car.s - best.s;
+        if (d > 0 && d < gap) { gap = d; next = car; }
+      }
+      if (next) this.askToYield(next);
     }
     return best;
+  }
+
+  askToYield(car) {
+    car.hurry = 7;
+    // уже перестраивается сама — просто поторопим, иначе просим уступить
+    if (car.blinkSide && car.nextLane >= 0) car.blinkT = Math.min(car.blinkT, 0.2);
+    else if (!car.blinkSide) car.yieldT = 7;
   }
 
   reset(player) {
@@ -167,13 +181,15 @@ export class Traffic {
       if (car.hurry > 0) car.hurry -= dt;
 
       // держим дистанцию до машины впереди; та, которой моргнули и которой мешают, прибавляет, чтобы встать перед помехой
-      let limit = car.want + (car.yieldT > 0 ? 9 : 0), gapBest = Infinity;
+      let limit = car.want + (car.yieldT > 0 ? 9 : 0), gapBest = Infinity, boxed = false;
       for (const t of this.cars) {
         if (t === car || !t.active || t.key !== car.key) continue;
         if (t.lane !== car.lane && t.nextLane !== car.lane && t.lane !== car.nextLane) continue;
         const gap = t.s - car.s - t.hl - car.hl;
-        if (gap > -2 && gap < gapBest) { gapBest = gap; if (gap < 7 + car.v * 1.1) limit = Math.min(limit, gap < 3 ? 0 : t.v); }
+        if (gap > -2 && gap < gapBest) { gapBest = gap; if (gap < 7 + car.v * 1.1) { limit = Math.min(limit, gap < 3 ? 0 : t.v); boxed = true; } }
       }
+      // просили уступить, а впереди занято и ускориться нельзя — сбрасываем скорость, чтобы пропустить соседей и уйти за них
+      if (car.yieldT > 0 && boxed) limit = Math.min(limit, car.want - 4.5);
       // игрок тоже препятствие: не таранить его сзади, если он стоит или едет медленнее
       const dsP = p.s - car.s, latP = p.lat - car.off;
       if (p.d < 14 && dsP > 0 && dsP - car.hl - 2.3 < 6 + car.v && Math.abs(latP) < 2.1 && p.vAlong < car.v) {

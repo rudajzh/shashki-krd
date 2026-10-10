@@ -10,6 +10,7 @@ const edit = (rel, fn) => { const u = new URL(rel, root); fs.writeFileSync(u, fn
 edit('index.html', (s) => s
   .replace(/(style\.css|js\/main\.js)(\?v=\d+)?/g, `$1?v=${v}`)
   .replace(/версия 0\.\d+/, `версия 0.${v}`));
+edit('car.html', (s) => s.replace(/(js\/showroom\.js)(\?v=\d+)?/g, `$1?v=${v}`));
 for (const f of fs.readdirSync(new URL('js/', root))) {
   if (f.endsWith('.js')) edit('js/' + f, (s) => s
     .replace(/(from '\.\/[\w-]+\.js)(\?v=\d+)?'/g, `$1?v=${v}'`)

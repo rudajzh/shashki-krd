@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<title>Машина · Шашки Краснодар</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d12; color: #fff; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .bar { position: fixed; left: 0; right: 0; bottom: max(14px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+  .sw { display: flex; gap: 10px; pointer-events: auto; }
+  .sw button { width: 36px; height: 36px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); padding: 0; }
+  .sw button.sel { border-color: #fff; transform: scale(1.12); }
+  .info { font-size: 13px; opacity: .75; text-align: center; padding: 0 16px; }
+  .top { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: center; }
+  .top a { color: #fff; text-decoration: none; background: rgba(255,255,255,.12); padding: 8px 12px; border-radius: 10px; font-size: 14px; }
+  .top b { font-size: 15px; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div class="top"><a href="./">← В игру</a><b>Образец детализации</b></div>
+<div class="bar">
+  <div class="sw" id="sw"></div>
+  <div class="info" id="info"></div>
+</div>
+<script type="module" src="js/showroom.js?v=8"></script>
+</body>
+</html>
