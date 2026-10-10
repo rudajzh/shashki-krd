@@ -1,6 +1,7 @@
 // Строит город из data/*.json: дороги, разметка, дома, деревья + проверка столкновений со зданиями.
 import * as THREE from 'three';
-import { Chain, LANE_W } from './chain.js?v=4';
+import { Chain, LANE_W } from './chain.js?v=5';
+import { buildLandmarks } from './landmarks.js?v=5';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -110,16 +111,26 @@ function windowTexture() {
   return t;
 }
 
-function textPlane(text, w, h, bg, fg) {
-  const c = document.createElement('canvas');
-  c.width = 1024; c.height = Math.round(1024 * h / w);
-  const g = c.getContext('2d');
-  g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
-  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = `900 ${Math.round(c.height * 0.62)}px system-ui, -apple-system, Arial, sans-serif`;
-  g.fillText(text, c.width / 2, c.height / 2 + c.height * 0.04);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
+const textCache = new Map();
+function textPlane(text, w, h, bg, fg, res = 512) {
+  const key = [text, bg, fg, res, Math.round(w / h * 20)].join('|');
+  let t = textCache.get(key);
+  if (!t) {
+    const c = document.createElement('canvas');
+    c.width = res; c.height = Math.max(16, Math.round(res * h / w));
+    const g = c.getContext('2d');
+    g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+    let px = Math.round(c.height * 0.62);
+    g.font = `900 ${px}px system-ui, -apple-system, Arial, sans-serif`;
+    const tw = g.measureText(text).width;
+    if (tw > c.width * 0.92) { px = Math.floor(px * c.width * 0.92 / tw); g.font = `900 ${px}px system-ui, -apple-system, Arial, sans-serif`; }
+    g.fillText(text, c.width / 2, c.height / 2 + c.height * 0.04);
+    t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    textCache.set(key, t);
+  }
   return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide }));
 }
 
@@ -131,7 +142,7 @@ function gate(scene, x, z, dx, dz, width, text, bg) {
     p.position.set(s * (width / 2 + 0.6), 3.75, 0);
     g.add(p);
   }
-  const banner = textPlane(text, width + 1.2, 1.8, bg, '#ffffff');
+  const banner = textPlane(text, width + 1.2, 1.8, bg, '#ffffff', 1024);
   banner.position.y = 6.6;
   banner.rotation.y = Math.PI;
   g.add(banner);
@@ -219,6 +230,17 @@ export function buildWorld(data, scene) {
   const cell = 40, grid = new Map(), polys = [];
   const addToGrid = (k, idx) => { let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(idx); };
   const col = new THREE.Color(), roofCol = new THREE.Color();
+  let shukhov = null;
+  const named = [];
+  // препятствие для машины: многоугольник в сетке столкновений
+  function addSolid(p) {
+    const n = p.length / 2;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let i = 0; i < n; i++) { x0 = Math.min(x0, p[i * 2]); x1 = Math.max(x1, p[i * 2]); z0 = Math.min(z0, p[i * 2 + 1]); z1 = Math.max(z1, p[i * 2 + 1]); }
+    const idx = polys.push({ p: Float32Array.from(p), x0, x1, z0, z1 }) - 1;
+    for (let gx = Math.floor(x0 / cell); gx <= Math.floor(x1 / cell); gx++)
+      for (let gz = Math.floor(z0 / cell); gz <= Math.floor(z1 / cell); gz++) addToGrid(gx + ',' + gz, idx);
+  }
   for (const b of data.buildings) {
     let p = b.p;
     const n = p.length / 2;
@@ -230,8 +252,15 @@ export function buildWorld(data, scene) {
       for (let i = n - 1; i >= 0; i--) q.push(p[i * 2], p[i * 2 + 1]);
       p = q;
     }
-    const h = b.h, tall = h > 34;
-    col.setHex(tall ? GLASS[b.s % GLASS.length] : WALLS[b.s % WALLS.length]);
+    if (b.n && /Шухова/.test(b.n)) { // вместо коробки ставим саму башню
+      let cx = 0, cz = 0;
+      for (let i = 0; i < n; i++) { cx += p[i * 2] / n; cz += p[i * 2 + 1] / n; }
+      shukhov = [cx, cz];
+      continue;
+    }
+    const mall = b.n === 'Галерея Краснодар';
+    const h = mall ? 24 : b.h, tall = h > 34 || mall;
+    col.setHex(mall ? 0x6f8fa8 : tall ? GLASS[b.s % GLASS.length] : WALLS[b.s % WALLS.length]);
     const shade = 0.9 + ((b.s * 7) % 20) / 100;
     col.multiplyScalar(shade);
     let u = 0;
@@ -255,12 +284,8 @@ export function buildWorld(data, scene) {
     for (const t of THREE.ShapeUtils.triangulateShape(contour, [])) {
       roofM.tri(contour[t[0]].x, h, contour[t[0]].y, contour[t[1]].x, h, contour[t[1]].y, contour[t[2]].x, h, contour[t[2]].y, roofCol);
     }
-    // сетка для столкновений
-    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (let i = 0; i < n; i++) { x0 = Math.min(x0, p[i * 2]); x1 = Math.max(x1, p[i * 2]); z0 = Math.min(z0, p[i * 2 + 1]); z1 = Math.max(z1, p[i * 2 + 1]); }
-    const idx = polys.push({ p: Float32Array.from(p), x0, x1, z0, z1 }) - 1;
-    for (let gx = Math.floor(x0 / cell); gx <= Math.floor(x1 / cell); gx++)
-      for (let gz = Math.floor(z0 / cell); gz <= Math.floor(z1 / cell); gz++) addToGrid(gx + ',' + gz, idx);
+    if (b.n) named.push({ n: b.n, p, h });
+    addSolid(p);
   }
   const walls = new THREE.Mesh(wm.geometry(), new THREE.MeshLambertMaterial({ vertexColors: true, map: windowTexture() }));
   walls.frustumCulled = false;
@@ -275,6 +300,8 @@ export function buildWorld(data, scene) {
   const N = chains.north, S = chains.south, tmp = {};
   let hint = -1, seed = 1;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const bm = new Mesher(), pm = new Mesher(), lawn = C(0x6f9a55), path = C(0xc2b8a6);
+  let lastStrip = null;
   for (let i = 0; i < N.n; i += 2) {
     S.project(N.x[i], N.z[i], hint, tmp);
     if (hint < 0 || tmp.d > 80) S.project(N.x[i], N.z[i], -1, tmp);
@@ -285,12 +312,24 @@ export function buildWorld(data, scene) {
     const ax = N.x[i], az = N.z[i];
     const o = {};
     S.at(tmp.s, o);
-    const rows = free > 16 ? [0.3, 0.7] : [0.5];
+    const at = (fromN) => { const t = fromN / tmp.d; return [ax + (o.x - ax) * t, az + (o.z - az) * t]; };
+    // газон от бордюра до бордюра и плиточная дорожка посередине
+    const strip = { i, a: at(wN + 1.2), b: at(tmp.d - wS - 1.2), wa: at(tmp.d / 2 - 2 + (wN - wS) / 2), wb: at(tmp.d / 2 + 2 + (wN - wS) / 2) };
+    if (lastStrip && i - lastStrip.i === 2) {
+      bm.flatQuad(lastStrip.a, strip.a, strip.b, lastStrip.b, 0.03, lawn);
+      if (free > 11) pm.flatQuad(lastStrip.wa, strip.wa, strip.wb, lastStrip.wb, 0.035, path);
+    }
+    lastStrip = strip;
+    const arch = data.landmarks.arch;
+    if (arch && Math.hypot((strip.a[0] + strip.b[0]) / 2 - arch[0], (strip.a[1] + strip.b[1]) / 2 - arch[1]) < 14) continue;
+    const rows = free > 16 ? [0.22, 0.78] : free > 11 ? [0.15, 0.85] : [0.5];
     for (const r of rows) {
-      const fromN = wN + 2 + (free - 4) * r, t = fromN / tmp.d;
-      treePos.push([ax + (o.x - ax) * t + (rnd() - 0.5) * 1.5, az + (o.z - az) * t + (rnd() - 0.5) * 1.5]);
+      const [tx, tz] = at(wN + 2 + (free - 4) * r);
+      treePos.push([tx + (rnd() - 0.5) * 1.2, tz + (rnd() - 0.5) * 1.2]);
     }
   }
+  flat(bm.geometry(), 1, 1);
+  flat(pm.geometry(), 2, 2);
   const trunkG = new THREE.CylinderGeometry(0.16, 0.22, 2.6, 6);
   trunkG.translate(0, 1.3, 0);
   const crownG = new THREE.IcosahedronGeometry(1, 0);
@@ -347,6 +386,8 @@ export function buildWorld(data, scene) {
   gate(scene, o.x, o.z, o.dx, o.dz, o.lanes * LANE_W, 'СТАРТ · ТЕАТР ДРАМЫ', '#1f6feb');
   N.at(finishS, o);
   gate(scene, o.x, o.z, o.dx, o.dz, o.lanes * LANE_W, 'ФИНИШ · АВРОРА', '#d1242f');
+
+  buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov });
 
   // столкновения: точка внутри здания / рядом со стволом
   function pointInPoly(pl, x, z) {

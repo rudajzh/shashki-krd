@@ -29,17 +29,14 @@ export const CAR_SETUP = {
 // угол колёс, доступный на скорости u
 export const steerLockAt = (u, S = CAR_SETUP) => S.steerLock / (1 + S.steerFade * (u / 9) * (u / 9));
 
-// Помощник: когда руль отпущен, машина плавно доворачивает вдоль дороги.
-// Большой угол (машина едет наискосок после нырка) убирается медленно — тут рулит игрок.
-// Маленький остаток в пару градусов подчищается быстро, но он почти незаметен на глаз.
-// Усилие ограничено, чтобы помощник никогда не спорил с рукой игрока.
-export function alignSteer(car, roadYaw) {
+// Лёгкий «магнит» к направлению дороги: когда руль отпущен, машина очень медленно доворачивает
+// вдоль полосы. Он не возвращает машину после манёвра — выравнивает игрок сам, — а только
+// не даёт ей потихоньку уползать с дороги. tau — секунд на исправление, предел усилия — 10 % руля.
+export function alignSteer(car, roadYaw, tau = 2.6) {
   const d = Math.atan2(Math.sin(roadYaw - car.yaw), Math.cos(roadYaw - car.yaw));
-  const k = Math.max(0, Math.min(1, (Math.abs(d) - 0.045) / 0.11)); // 0 при ≤2,5°, 1 при ≥9°
-  const tau = 0.45 + (1.3 - 0.45) * k * k * (3 - 2 * k);            // секунд на исправление
   const u = Math.max(8, Math.abs(car.u));
   const delta = (car.s.a + car.s.b) * (d / tau) / u; // угол колёс, дающий поворот со скоростью d / tau
-  return Math.max(-0.3, Math.min(0.3, delta / steerLockAt(u, car.s)));
+  return Math.max(-0.1, Math.min(0.1, delta / steerLockAt(u, car.s)));
 }
 
 const tyre = (alpha, load, S) => -S.grip * load * Math.sin(S.tyreC * Math.atan(S.tyreB * alpha));

@@ -137,6 +137,7 @@ for (const w of ways) {
   const pts = w.geometry.map(proj);
   if (!pts.some((p) => distToStreet(p[0], p[1]) < CORRIDOR_ROADS)) continue;
   roads.push({
+    n: t.name || undefined,
     c: t.highway.replace('_link', ''),
     l: +t.lanes || 0,
     o: t.oneway === 'yes' ? 1 : 0,
@@ -165,7 +166,7 @@ for (const w of ways) {
     else if (/house|detached/.test(t.building)) h = 4.5;
     else h = 5 + Math.floor(hash(w.id) * 3) * 3.2;
   }
-  buildings.push({ h: r1(h), s: Math.floor(hash(w.id + 7) * 1000), p: pts.flat().map(r1) });
+  buildings.push({ h: r1(h), s: Math.floor(hash(w.id + 7) * 1000), p: pts.flat().map(r1), n: t.name || undefined });
 }
 
 // ---------- зелень, деревья, светофоры ----------
@@ -191,10 +192,49 @@ const marks = {
   avrora: proj({ lat: 45.058117, lon: 38.9826054 }).map(r1),
 };
 
-const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks };
+// ---------- перекрёстки: где названные улицы пересекают каждую проезжую часть ----------
+const crossings = [];
+for (const [key, c] of Object.entries(chains)) {
+  const seen = new Set();
+  for (const r of roads) {
+    if (!r.n || r.n === STREET || !/^(primary|secondary|tertiary|residential)$/.test(r.c) || seen.has(r.n)) continue;
+    let hit = null;
+    for (let i = 0; i < r.p.length - 2 && !hit; i += 2) {
+      const ax = r.p[i], az = r.p[i + 1], bx = r.p[i + 2], bz = r.p[i + 3];
+      for (let j = 0; j < c.pts.length - 2; j += 2) {
+        const cx = c.pts[j], cz = c.pts[j + 1], dx = c.pts[j + 2], dz = c.pts[j + 3];
+        const den = (bx - ax) * (dz - cz) - (bz - az) * (dx - cx);
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((cx - ax) * (dz - cz) - (cz - az) * (dx - cx)) / den;
+        const u = ((cx - ax) * (bz - az) - (cz - az) * (bx - ax)) / den;
+        if (t >= 0 && t <= 1 && u >= 0 && u <= 1) { hit = [r1(ax + (bx - ax) * t), r1(az + (bz - az) * t)]; break; }
+      }
+    }
+    if (hit) { seen.add(r.n); crossings.push({ n: r.n, k: key, x: hit[0], z: hit[1] }); }
+  }
+}
+
+// ---------- достопримечательности ----------
+const poi = JSON.parse(fs.readFileSync(new URL('data/raw-poi.json', root))).elements;
+const at = (e) => proj(e.center || e).map(r1);
+const landmarks = { fountains: [] };
+for (const e of poi) {
+  const t = e.tags || {};
+  if (t.building === 'triumphal_arch') landmarks.arch = at(e);
+  else if (t.historic === 'memorial' && t.name === 'Аврора') landmarks.avrora = at(e);
+  else if (t.amenity === 'fountain' && e.type === 'way') {
+    const [x, z] = at(e);
+    if (distToStreet(x, z) < 130) landmarks.fountains.push([x, z, /музык/i.test(t.name || '') ? 13 : 4.5]);
+  }
+}
+
+// арка в OSM — отношение 7636786 (building=triumphal_arch); в выгрузке POI её нет, берём центр оттуда же
+if (!landmarks.arch) landmarks.arch = [-57, -1];
+const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks };
 fs.writeFileSync(new URL('data/krasnaya.json', root), JSON.stringify(out));
 
 const chainLen = (c) => { let l = 0; for (let i = 2; i < c.pts.length; i += 2) l += Math.hypot(c.pts[i] - c.pts[i - 2], c.pts[i + 1] - c.pts[i - 1]); return Math.round(l); };
 console.log(`север: ${chainLen(chains.north)} м, юг: ${chainLen(chains.south)} м`);
 console.log(`дорог ${roads.length}, зданий ${buildings.length}, зелёных зон ${greens.length}, деревьев ${trees.length / 2}, светофоров ${signals.length / 2}`);
+console.log(`перекрёстков ${crossings.length}, арка ${landmarks.arch}, Аврора ${landmarks.avrora}, фонтанов ${landmarks.fountains.length}, зданий с названием ${buildings.filter((b) => b.n).length}`);
 console.log(`размер ${(fs.statSync(new URL('data/krasnaya.json', root)).size / 1024).toFixed(0)} КБ`);

@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=4';
-import { Car, alignSteer } from './car.js?v=4';
-import { LANE_W, laneOffset } from './chain.js?v=4';
-import { makePlayerCar } from './carmodel.js?v=4';
-import { Traffic } from './traffic.js?v=4';
-import { Input } from './input.js?v=4';
-import { Sound } from './audio.js?v=4';
+import { buildWorld } from './world.js?v=5';
+import { Car, alignSteer } from './car.js?v=5';
+import { LANE_W, laneOffset } from './chain.js?v=5';
+import { makePlayerCar } from './carmodel.js?v=5';
+import { Traffic } from './traffic.js?v=5';
+import { Input } from './input.js?v=5';
+import { Sound } from './audio.js?v=5';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -40,7 +40,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=4')).json();
+const data = await (await fetch('data/krasnaya.json?v=5')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();
@@ -55,7 +55,7 @@ const PW = { hl: model.type.len / 2, hw: model.type.wid / 2 };
 const G = {
   state: 'menu', // menu | drive | crash | finish
   score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0,
-  routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9,
+  routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9, flashT: 0,
 };
 const inp = { steer: 0, throttle: 0, brake: 0, handbrake: false };
 const idle = { steer: 0, throttle: 0, brake: 0, handbrake: true };
@@ -134,13 +134,19 @@ function tick(dt) {
   const driving = G.state === 'drive';
   input.read(inp);
   const ctl = driving ? inp : idle;
-  // помощник вступает не сразу: четверть секунды после руля он молчит (игрок сам выравнивает),
-  // потом за 0,6 с плавно набирает силу
+  // лёгкий «магнит» к дороге: включается через полсекунды после руля и набирает силу ещё секунду
   if (inp.steer !== 0) G.handsOff = 0;
   else if (driving) {
     G.handsOff += dt;
-    const w = Math.max(0, Math.min(1, (G.handsOff - 0.25) / 0.6));
+    const w = Math.max(0, Math.min(1, (G.handsOff - 0.5) / 1.0));
     inp.steer = roadAssist() * w * w * (3 - 2 * w);
+  }
+  // моргнуть фарами: машина впереди уступает полосу
+  if (G.flashT > 0) G.flashT -= dt;
+  if (input.takeFlash() && driving && G.flashT <= 0.1) {
+    G.flashT = 0.42;
+    traffic.flash(car);
+    sound.flash();
   }
   const px = car.x, pz = car.z;
   let acc = dt;
@@ -199,7 +205,7 @@ function tick(dt) {
   }
 }
 
-// Руль отпущен — машина мягко доворачивает вдоль Красной. Работает только на её проезжей части
+// Руль отпущен — машина едва заметно доворачивает вдоль Красной. Работает только на её проезжей части
 // и только если мы едем примерно вдоль дороги (в любую сторону).
 function roadAssist() {
   if (car.speed < 9) return 0;
@@ -237,6 +243,7 @@ function draw(dt) {
     w.mesh.rotation.x = G.wheelSpin;
     if (w.front) w.pivot.rotation.y = car.steer;
   }
+  model.setFlash(G.flashT > 0.27 || (G.flashT > 0.03 && G.flashT < 0.17) ? 1 : 0);
   model.setBrake(G.state === 'drive' ? inp.brake > 0 || inp.handbrake : true);
 
   // камера за машиной: поворачивается с запаздыванием, чтобы занос был виден
@@ -251,6 +258,7 @@ function draw(dt) {
   const sh = G.shake + Math.max(0, v - 22) * 0.0011;
   camera.position.set(car.x - cx * dist + (Math.random() - 0.5) * sh, height + (Math.random() - 0.5) * sh, car.z - cz * dist + (Math.random() - 0.5) * sh);
   camera.lookAt(car.x + cx * 8, 1.0, car.z + cz * 8);
+  if (G.freeCam) { const f = G.freeCam; camera.position.set(f[0], f[1], f[2]); camera.lookAt(f[3], f[4], f[5]); } // отладка: свободная камера
   // угол обзора быстро раскрывается до ~100 км/ч и дальше растёт плавно — скорость чувствуется раньше
   const fov = 60 + 22 * (1 - Math.exp(-v / 26));
   if (Math.abs(fov - camera.fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 4); camera.updateProjectionMatrix(); }
@@ -314,4 +322,4 @@ document.addEventListener('visibilitychange', () => { last = performance.now(); 
 $('install').hidden = !(isIOS && !standalone);
 showMenu();
 requestAnimationFrame(frame);
-window.__game = { G, car, world, traffic, input, tick, draw, startRun, renderer, LANE_W };
+window.__game = { G, car, world, traffic, input, tick, draw, startRun, renderer, scene, camera, LANE_W };

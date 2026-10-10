@@ -154,9 +154,21 @@ export function makePlayerCar(color) {
   shadow.position.y = 0.11;
   root.add(shadow);
 
+  // луч дальнего света на асфальте — его видно сзади, когда игрок моргает фарами
+  const bs = new THREE.Shape();
+  bs.moveTo(-0.8, 0); bs.lineTo(0.8, 0); bs.lineTo(5.5, 34); bs.lineTo(-5.5, 34); bs.closePath();
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(new THREE.ShapeGeometry(bs), beamMat);
+  beam.rotation.x = Math.PI / 2; // форма лежит на асфальте и тянется вперёд
+  beam.position.set(0, 0.16, t.len / 2);
+  beam.renderOrder = 5;
+  beam.visible = false;
+  root.add(beam);
+
   return {
     root, chassis, wheels, type: t,
     setColor(c) { body.geometry.dispose(); body.geometry = mergeMixed(bodyParts(t, c, false)); },
     setBrake(on) { brakeMat.color.setHex(on ? 0xff2a2a : 0x6a0d0d); },
+    setFlash(k) { beam.visible = k > 0; beamMat.opacity = k * 0.5; },
   };
 }

@@ -62,6 +62,7 @@ export class Sound {
     src.start(t, Math.random()); src.stop(t + dur + 0.05);
   }
 
+  flash() { this.burst(2600, 5, 0.35, 0.05); setTimeout(() => this.burst(2600, 5, 0.35, 0.05), 140); }
   whoosh() { this.burst(900, 1.2, 0.5, 0.35, 0.35); }
   crash() { this.burst(180, 0.6, 1.4, 0.7, 0.4); this.burst(2400, 0.8, 0.5, 0.25, 0.5); }
   finish() { this.burst(1200, 6, 0.4, 0.5, 2); }

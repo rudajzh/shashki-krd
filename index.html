@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -31,8 +31,11 @@
 
 <div id="touch" hidden>
   <div class="pad left">
-    <button data-ctl="left" aria-label="Влево">◀</button>
-    <button data-ctl="right" aria-label="Вправо">▶</button>
+    <button data-ctl="flash" class="flash" aria-label="Моргнуть фарами">Моргнуть</button>
+    <div class="row">
+      <button data-ctl="left" aria-label="Влево">◀</button>
+      <button data-ctl="right" aria-label="Вправо">▶</button>
+    </div>
   </div>
   <div class="pad right">
     <button data-ctl="hand" class="small" aria-label="Ручник">Р</button>
@@ -47,10 +50,10 @@
     <p class="route">Красная: театр драмы → «Аврора» · 2,6 км</p>
     <div class="swatches" id="swatches"></div>
     <button id="go" class="primary">Поехали</button>
-    <p class="keys">Короткое касание руля — нырок в соседнюю полосу, касание обратно — выровняться</p>
+    <p class="keys">«Моргнуть» (клавиша F) — машина впереди уступит полосу</p>
     <p class="best" id="best"></p>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.4</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.5</p>
   </div>
 </div>
 
@@ -69,6 +72,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=4"></script>
+<script type="module" src="js/main.js?v=5"></script>
 </body>
 </html>
