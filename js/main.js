@@ -71,7 +71,24 @@ function placeAtStart() {
   traffic.reset(car);
 }
 
+// Полный экран. На Android и компьютере разворачиваем сами по нажатию «Поехали».
+// На айфоне Safari этого не разрешает — там игра занимает весь экран только при запуске с иконки на «Домой».
+const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const coarse = matchMedia('(pointer: coarse)').matches;
+function goFullscreen() {
+  if (!coarse || standalone || document.fullscreenElement || window.self !== window.top) return;
+  const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  try {
+    Promise.resolve(req.call(el, { navigationUI: 'hide' }))
+      .then(() => screen.orientation?.lock?.('landscape'))
+      .catch(() => { /* браузер не разрешил — играем как есть */ });
+  } catch { /* старый Safari */ }
+}
+
 function startRun() {
+  goFullscreen();
   placeAtStart();
   Object.assign(G, { state: 'drive', score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0, shake: 0 });
   $('menu').hidden = true; $('result').hidden = true; $('hud').hidden = false;
@@ -287,6 +304,7 @@ document.addEventListener('touchend', (e) => {
 document.addEventListener('dblclick', (e) => e.preventDefault());
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 
+$('install').hidden = !(isIOS && !standalone);
 showMenu();
 requestAnimationFrame(frame);
 window.__game = { G, car, world, traffic, input, tick, draw, startRun, renderer, LANE_W };

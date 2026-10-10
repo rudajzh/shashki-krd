@@ -68,3 +68,5 @@ button.ghost { display: block; width: 100%; padding: 11px; margin-top: 8px; bord
 /* затемнение краёв на скорости — «тоннель» */
 #vig { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 50% 58%, transparent 42%, rgba(6, 10, 16, 0.5) 100%); }
 html { touch-action: none; }
+
+.install { font-size: 13px; line-height: 1.35; background: rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 9px 12px; margin-top: 10px !important; }

@@ -8,7 +8,10 @@
 <meta name="apple-mobile-web-app-title" content="Шашки КРД">
 <meta name="theme-color" content="#101418">
 <title>Шашки · Краснодар</title>
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css?v=3">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -46,7 +49,8 @@
     <button id="go" class="primary">Поехали</button>
     <p class="keys">Коротко нажмите руль — машина нырнёт в соседнюю полосу и сама выровняется</p>
     <p class="best" id="best"></p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.2</p>
+    <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.3</p>
   </div>
 </div>
 
@@ -65,6 +69,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=2"></script>
+<script type="module" src="js/main.js?v=3"></script>
 </body>
 </html>
