@@ -1,6 +1,6 @@
 // Строит город из data/*.json: дороги, разметка, дома, деревья + проверка столкновений со зданиями.
 import * as THREE from 'three';
-import { Chain, LANE_W } from './chain.js';
+import { Chain, LANE_W } from './chain.js?v=4';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];

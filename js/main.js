@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js';
-import { Car, alignSteer } from './car.js';
-import { LANE_W, laneOffset } from './chain.js';
-import { makePlayerCar } from './carmodel.js';
-import { Traffic } from './traffic.js';
-import { Input } from './input.js';
-import { Sound } from './audio.js';
+import { buildWorld } from './world.js?v=4';
+import { Car, alignSteer } from './car.js?v=4';
+import { LANE_W, laneOffset } from './chain.js?v=4';
+import { makePlayerCar } from './carmodel.js?v=4';
+import { Traffic } from './traffic.js?v=4';
+import { Input } from './input.js?v=4';
+import { Sound } from './audio.js?v=4';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -40,7 +40,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json')).json();
+const data = await (await fetch('data/krasnaya.json?v=4')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();
@@ -55,7 +55,7 @@ const PW = { hl: model.type.len / 2, hw: model.type.wid / 2 };
 const G = {
   state: 'menu', // menu | drive | crash | finish
   score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0,
-  routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0,
+  routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9,
 };
 const inp = { steer: 0, throttle: 0, brake: 0, handbrake: false };
 const idle = { steer: 0, throttle: 0, brake: 0, handbrake: true };
@@ -134,7 +134,14 @@ function tick(dt) {
   const driving = G.state === 'drive';
   input.read(inp);
   const ctl = driving ? inp : idle;
-  if (driving && inp.steer === 0) inp.steer = roadAssist();
+  // помощник вступает не сразу: четверть секунды после руля он молчит (игрок сам выравнивает),
+  // потом за 0,6 с плавно набирает силу
+  if (inp.steer !== 0) G.handsOff = 0;
+  else if (driving) {
+    G.handsOff += dt;
+    const w = Math.max(0, Math.min(1, (G.handsOff - 0.25) / 0.6));
+    inp.steer = roadAssist() * w * w * (3 - 2 * w);
+  }
   const px = car.x, pz = car.z;
   let acc = dt;
   while (acc > 1e-6) { const h = Math.min(STEP, acc); car.step(h, ctl); acc -= h; }
@@ -192,7 +199,7 @@ function tick(dt) {
   }
 }
 
-// Руль отпущен — машина сама выравнивается вдоль Красной. Работает только на её проезжей части
+// Руль отпущен — машина мягко доворачивает вдоль Красной. Работает только на её проезжей части
 // и только если мы едем примерно вдоль дороги (в любую сторону).
 function roadAssist() {
   if (car.speed < 9) return 0;
