@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Шашки КРД">
+<meta name="theme-color" content="#101418">
+<title>Шашки · Краснодар</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud" hidden>
+  <div class="hud-top">
+    <div class="box"><span class="label">Очки</span><b id="score">0</b></div>
+    <div class="box combo" id="comboBox"><span class="label">Серия</span><b id="combo">×1</b></div>
+    <div class="box right"><span class="label">До финиша</span><b id="left">0 м</b></div>
+  </div>
+  <div id="pop"></div>
+  <div class="speed"><b id="speed">0</b><span>км/ч</span><i id="gear">1</i></div>
+  <div class="hint" id="rotate">Поверните телефон горизонтально</div>
+</div>
+
+<div id="touch" hidden>
+  <div class="pad left">
+    <button data-ctl="left" aria-label="Влево">◀</button>
+    <button data-ctl="right" aria-label="Вправо">▶</button>
+  </div>
+  <div class="pad right">
+    <button data-ctl="hand" class="small" aria-label="Ручник">Р</button>
+    <button data-ctl="brake" class="brake" aria-label="Тормоз">Тормоз</button>
+    <button data-ctl="gas" class="gas" aria-label="Газ">Газ</button>
+  </div>
+</div>
+
+<div id="menu" class="overlay">
+  <div class="card">
+    <h1>Шашки · Краснодар</h1>
+    <p class="route">Красная: театр драмы → «Аврора» · 2,6 км</p>
+    <div class="swatches" id="swatches"></div>
+    <button id="go" class="primary">Поехали</button>
+    <p class="keys">Клавиатура: стрелки или WASD, пробел — ручник, R — заново</p>
+    <p class="best" id="best"></p>
+    <p class="osm">Карта: © OpenStreetMap contributors</p>
+  </div>
+</div>
+
+<div id="result" class="overlay" hidden>
+  <div class="card">
+    <h1 id="resTitle">Авария</h1>
+    <p class="route" id="resText"></p>
+    <div class="stats">
+      <div><span>Очки</span><b id="resScore">0</b></div>
+      <div><span>Впритирку</span><b id="resNear">0</b></div>
+      <div><span>Макс. скорость</span><b id="resTop">0</b></div>
+    </div>
+    <button id="again" class="primary">Ещё раз</button>
+    <button id="toMenu" class="ghost">В меню</button>
+  </div>
+</div>
+
+<button id="mute" aria-label="Звук">🔊</button>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
