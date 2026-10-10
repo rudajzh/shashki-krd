@@ -1,15 +1,15 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=6';
-import { Car, alignSteer } from './car.js?v=6';
-import { LANE_W, laneOffset } from './chain.js?v=6';
-import { makePlayerCar } from './carmodel.js?v=6';
-import { Traffic } from './traffic.js?v=6';
-import { Input } from './input.js?v=6';
-import { Sound } from './audio.js?v=6';
+import { buildWorld } from './world.js?v=7';
+import { Car, alignSteer, steerLockAt } from './car.js?v=7';
+import { LANE_W, laneOffset, halfWidth } from './chain.js?v=7';
+import { makePlayerCar } from './carmodel.js?v=7';
+import { Traffic } from './traffic.js?v=7';
+import { Input } from './input.js?v=7';
+import { Sound } from './audio.js?v=7';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
-const SKY = 0xbcd6ec;
+const FOG = 0x141a2c; // ночная дымка у горизонта
 const STEP = 1 / 240;
 
 const store = {
@@ -22,12 +22,23 @@ const canvas = $('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(SKY, 220, 1050);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x9a958c, 2.1));
-const sun = new THREE.DirectionalLight(0xfff2dc, 2.0);
-sun.position.set(-0.6, 1, 0.35);
-scene.add(sun);
+// ночное небо: тёмный верх, у горизонта — зарево города
+{
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 256;
+  const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, '#04060d'); gr.addColorStop(0.45, '#0b1122'); gr.addColorStop(0.72, '#1b1f3a'); gr.addColorStop(0.86, '#3a2a40'); gr.addColorStop(1, '#3a2a40');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  scene.background = t;
+}
+scene.fog = new THREE.Fog(FOG, 90, 780);
+// мягкий рассеянный свет: холодный сверху, тёплый отсвет фонарей снизу, слабая «луна» для объёма
+scene.add(new THREE.HemisphereLight(0x6f84b8, 0x4a3a2c, 1.25));
+const moon = new THREE.DirectionalLight(0x9db4e6, 0.55);
+moon.position.set(-0.5, 1, 0.4);
+scene.add(moon);
 const camera = new THREE.PerspectiveCamera(62, 1, 0.6, 1500);
 
 function resize() {
@@ -40,14 +51,19 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=6')).json();
+const data = await (await fetch('data/krasnaya.json?v=7')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();
 let color = store.get('color', COLORS[0]);
-const model = makePlayerCar(color);
+const model = makePlayerCar(color, world.glowTex, world.poolTex);
+// фары игрока освещают дома и машины впереди
+const lamp = new THREE.SpotLight(0xfff0d0, 2600, 110, 0.5, 0.75, 1.7);
+lamp.position.set(0, 1.1, 1.6);
+lamp.target.position.set(0, 0.2, 40);
+model.root.add(lamp, lamp.target);
 scene.add(model.root);
-const traffic = new Traffic(scene, world.chains);
+const traffic = new Traffic(scene, world.chains, world.glowTex, world.poolTex);
 const input = new Input();
 const sound = new Sound();
 const PW = { hl: model.type.len / 2, hw: model.type.wid / 2 };
@@ -64,7 +80,7 @@ const tmp = {}, rp = { i: -1 };
 
 function placeAtStart() {
   N.at(world.startS, tmp);
-  const off = laneOffset(Math.min(1, tmp.lanes - 1), tmp.lanes);
+  const off = laneOffset(Math.min(1, tmp.lanes - 1), tmp.lf);
   car.reset(tmp.x + tmp.dz * off, tmp.z - tmp.dx * off, Math.atan2(tmp.dx, tmp.dz));
   G.camYaw = car.yaw;
   G.routeI = -1; rp.i = -1;
@@ -103,7 +119,7 @@ function endRun(kind) {
   $('resTitle').textContent = kind === 'finish' ? 'Финиш!' : 'Авария';
   $('resText').textContent = kind === 'finish'
     ? `Красная пройдена за ${fmtTime(G.time)}` + (total > best && best > 0 ? ' · новый рекорд' : '')
-    : 'Заезд окончен' + (total > best && best > 0 ? ' · новый рекорд' : '');
+    : (G.why === 'curb' ? 'Зацепил бордюр' : 'Заезд окончен') + (total > best && best > 0 ? ' · новый рекорд' : '');
   $('resScore').textContent = total.toLocaleString('ru-RU');
   $('resNear').textContent = G.near;
   $('resTop').textContent = Math.round(G.top * 3.6) + ' км/ч';
@@ -134,12 +150,16 @@ function tick(dt) {
   const driving = G.state === 'drive';
   input.read(inp);
   const ctl = driving ? inp : idle;
-  // лёгкий «магнит» к дороге: включается через полсекунды после руля и набирает силу ещё секунду
+  // Руль отпущен: машина сама вписывается в изгибы улицы (это не возврат, а просто «дорога ведёт»),
+  // а лёгкий «магнит» к полосе включается через полсекунды и набирает силу ещё секунду.
   if (inp.steer !== 0) G.handsOff = 0;
   else if (driving) {
     G.handsOff += dt;
-    const w = Math.max(0, Math.min(1, (G.handsOff - 0.5) / 1.0));
-    inp.steer = roadAssist() * w * w * (3 - 2 * w);
+    const a = roadAssist();
+    if (a) {
+      const w = Math.max(0, Math.min(1, (G.handsOff - 0.5) / 1.0));
+      inp.steer = Math.max(-1, Math.min(1, a.bend + a.pull * w * w * (3 - 2 * w)));
+    }
   }
   // моргнуть фарами: машина впереди уступает полосу
   if (G.flashT > 0) G.flashT -= dt;
@@ -152,17 +172,19 @@ function tick(dt) {
   let acc = dt;
   while (acc > 1e-6) { const h = Math.min(STEP, acc); car.step(h, ctl); acc -= h; }
 
-  // дома и деревья
+  // бордюр, дома и деревья: задел на скорости — заезд окончен, на малой просто упираемся
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), lx = fz, lz = -fx;
+  const hN = traffic.proj.north.i, hS = traffic.proj.south.i;
   let solid = false;
   for (const [a, b] of [[PW.hl, PW.hw], [PW.hl, -PW.hw], [-PW.hl, PW.hw], [-PW.hl, -PW.hw], [PW.hl, 0]]) {
-    if (world.hitsSolid(car.x + fx * a + lx * b, car.z + fz * a + lz * b)) { solid = true; break; }
+    const cx = car.x + fx * a + lx * b, cz = car.z + fz * a + lz * b;
+    if (world.offRoad(cx, cz, hN, hS) || world.hitsSolid(cx, cz)) { solid = true; break; }
   }
   if (solid) {
     const hit = car.speed;
     car.x = px; car.z = pz;
     car.vx *= -0.25; car.vz *= -0.25; car.r *= 0.3;
-    if (driving && hit > 7) { crash(hit); }
+    if (driving && hit > 7) { crash(hit, 'curb'); }
   }
 
   events.crash = null; events.near.length = 0;
@@ -205,24 +227,30 @@ function tick(dt) {
   }
 }
 
-// Руль отпущен — машина едва заметно доворачивает вдоль Красной. Работает только на её проезжей части
-// и только если мы едем примерно вдоль дороги (в любую сторону).
+// Помощь, когда руль отпущен. bend — руль, нужный, чтобы ехать по изгибу улицы; pull — слабая
+// поправка к направлению и середине полосы. Работает только на проезжей части Красной.
 function roadAssist() {
-  if (car.speed < 9) return 0;
+  if (car.speed < 9) return null;
   let best = null;
   for (const key of ['north', 'south']) {
     const p = traffic.proj[key];
-    if (p.d < p.lanes * LANE_W / 2 + 4 && (!best || p.d < best.d)) best = p;
+    if (p.d < halfWidth(p.lf) + 2 && (!best || p.d < best.d)) best = p;
   }
-  if (!best) return 0;
-  let yaw = Math.atan2(best.dx, best.dz);
-  if (Math.sin(car.yaw) * best.dx + Math.cos(car.yaw) * best.dz < 0) yaw += Math.PI;
+  if (!best) return null;
+  const along = Math.sin(car.yaw) * best.dx + Math.cos(car.yaw) * best.dz >= 0 ? 1 : -1;
+  // чуть-чуть тянем к середине ближайшей полосы: цель — точка на её оси в 55 м впереди
+  const lane = Math.max(0, Math.min(best.lanes - 1, Math.round(best.lf / 2 - 0.5 - best.lat / LANE_W)));
+  const aim = Math.atan2(laneOffset(lane, best.lf) - best.lat, 55);
+  const yaw = Math.atan2(best.dx, best.dz) + (along > 0 ? aim : Math.PI - aim);
   const d = Math.atan2(Math.sin(yaw - car.yaw), Math.cos(yaw - car.yaw));
-  return Math.abs(d) < 0.6 ? alignSteer(car, yaw) : 0;
+  if (Math.abs(d) > 0.6) return null;
+  const wheelbase = car.s.a + car.s.b;
+  return { bend: wheelbase * best.kappa * along / steerLockAt(Math.abs(car.u), car.s), pull: alignSteer(car, yaw) };
 }
 
-function crash(rel) {
+function crash(rel, why) {
   if (G.state !== 'drive') return;
+  G.why = why || 'car';
   G.shake = Math.min(1.2, 0.35 + rel / 30);
   sound.crash();
   endRun('crash');

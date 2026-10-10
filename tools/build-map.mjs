@@ -13,7 +13,8 @@ const proj = (p) => [(p.lon - LON0) * KX, -(p.lat - LAT0) * KZ];
 const r1 = (v) => Math.round(v * 10) / 10;
 const key = (p) => p.lat.toFixed(7) + ',' + p.lon.toFixed(7);
 
-const CORRIDOR_ROADS = 330, CORRIDOR_BUILDINGS = 280;
+const CORRIDOR_ROADS = 60, CORRIDOR_BUILDINGS = 80; // с дороги теперь не съехать — дальние кварталы не нужны
+const KEEP = /театр драмы|Аврора|Галерея Краснодар|Шухова/; // знаковые здания оставляем, даже если они дальше
 const STREET = 'Красная улица';
 
 const ways = raw.elements.filter((e) => e.type === 'way' && e.geometry);
@@ -112,7 +113,25 @@ function resample(pts, lanes, step) {
   }
   const last = P.at(-1), tail = out.at(-1);
   if (Math.hypot(last[0] - tail[0], last[1] - tail[1]) > 1) { out.push(last); outL.push(L.at(-1)); }
-  return { pts: out.flat().map(r1), lanes: outL };
+  // убираем мелкую «дрожь» оси (в OSM на перекрёстках много коротких кусочков): скользящее среднее
+  for (let pass = 0; pass < 3; pass++) {
+    const src = out.map((q) => q.slice());
+    for (let i = 2; i < out.length - 2; i++) {
+      out[i] = [0, 1].map((k) => (src[i - 2][k] + src[i - 1][k] * 2 + src[i][k] * 3 + src[i + 1][k] * 2 + src[i + 2][k]) / 9);
+    }
+  }
+  // число полос в каждой точке — дробное и плавное: там, где полос становится больше,
+  // дорога расширяется постепенно, и линии разметки не ломаются
+  let lf = out.map((_, i) => (outL[Math.max(0, i - 1)] + outL[Math.min(outL.length - 1, i)]) / 2);
+  for (let pass = 0; pass < 3; pass++) {
+    const src = lf.slice();
+    for (let i = 0; i < lf.length; i++) {
+      let sum = 0, n = 0;
+      for (let k = -3; k <= 3; k++) { const j = i + k; if (j >= 0 && j < lf.length) { sum += src[j]; n++; } }
+      lf[i] = sum / n;
+    }
+  }
+  return { pts: out.flat().map(r1), lf: lf.map((v) => Math.round(v * 100) / 100) };
 }
 
 const chains = { north: buildChain(true), south: buildChain(false) };
@@ -134,8 +153,12 @@ const roads = [];
 for (const w of ways) {
   const t = w.tags;
   if (!t.highway || usedInChains.has(w.id)) continue;
-  const pts = w.geometry.map(proj);
+  let pts = w.geometry.map(proj);
   if (!pts.some((p) => distToStreet(p[0], p[1]) < CORRIDOR_ROADS)) continue;
+  const far = pts.map((p) => distToStreet(p[0], p[1]) > 170);
+  let i0 = far.indexOf(false), i1 = far.lastIndexOf(false);
+  pts = pts.slice(Math.max(0, i0 - 1), i1 + 2);
+  if (pts.length < 2) continue;
   roads.push({
     n: t.name || undefined,
     c: t.highway.replace('_link', ''),
@@ -157,7 +180,8 @@ for (const w of ways) {
   let cx = 0, cz = 0;
   for (const p of pts) { cx += p[0]; cz += p[1]; }
   cx /= pts.length; cz /= pts.length;
-  if (distToStreet(cx, cz) > CORRIDOR_BUILDINGS) continue;
+  const nearestVertex = Math.min(...pts.map((q) => distToStreet(q[0], q[1])));
+  if (nearestVertex > CORRIDOR_BUILDINGS && !(t.name && KEEP.test(t.name) && distToStreet(cx, cz) < 300)) continue;
   let h = parseFloat(t.height);
   if (!(h > 0)) {
     const lv = parseFloat(t['building:levels']);
@@ -176,13 +200,13 @@ for (const w of ways) {
   if (t.highway || t.building) continue;
   const pts = w.geometry.map(proj);
   if (pts.length < 4) continue;
-  if (!pts.some((p) => distToStreet(p[0], p[1]) < CORRIDOR_BUILDINGS)) continue;
+  if (!pts.some((p) => distToStreet(p[0], p[1]) < 120)) continue;
   greens.push(pts.slice(0, -1).flat().map(r1));
 }
 const trees = [], signals = [];
 for (const n of nodes) {
   const [x, z] = proj(n);
-  if (distToStreet(x, z) > CORRIDOR_BUILDINGS) continue;
+  if (distToStreet(x, z) > 120) continue;
   if (n.tags?.natural === 'tree') trees.push(r1(x), r1(z));
   else if (n.tags?.highway === 'traffic_signals') signals.push(r1(x), r1(z));
 }
@@ -210,7 +234,7 @@ for (const [key, c] of Object.entries(chains)) {
         if (t >= 0 && t <= 1 && u >= 0 && u <= 1) { hit = [r1(ax + (bx - ax) * t), r1(az + (bz - az) * t)]; break; }
       }
     }
-    if (hit) { seen.add(r.n); crossings.push({ n: r.n, k: key, x: hit[0], z: hit[1] }); }
+    if (hit) { seen.add(r.n); crossings.push({ n: r.n, k: key, x: hit[0], z: hit[1], c: r.c }); }
   }
 }
 

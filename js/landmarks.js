@@ -1,15 +1,16 @@
 // Узнаваемые места Красной: Александровская арка, «Аврора», фонтаны, башня Шухова,
 // вывески на зданиях и синие таблички с названиями поперечных улиц.
 import * as THREE from 'three';
-import { LANE_W } from './chain.js?v=6';
+import { halfWidth } from './chain.js?v=7';
 
-const L = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
+// ночью знаковые объекты подсвечены: материал немного светится собственным цветом
+const L = (color, extra) => new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.28, ...extra });
 const BRICK = L(0xb5522f), BRICK_D = L(0x94412a), TRIM = L(0xc7653c), SLATE = L(0x6c7077), DARK = L(0x34373c);
 const SLATE_2 = L(0x6c7077, { side: THREE.DoubleSide }); // у зеркальной крыши крыла грани вывернуты
-const KOK = L(0x9aa67c), ICON = L(0xe9dfc6), GOLD = L(0xd8a41e, { emissive: 0x4a3400 });
+const KOK = L(0x9aa67c), ICON = L(0xe9dfc6), GOLD = L(0xd8a41e, { emissiveIntensity: 0.6 });
 const STONE = L(0xa39c93), GRANITE = L(0x5a5653), BRONZE = L(0x3b352d);
-const WATER = new THREE.MeshBasicMaterial({ color: 0x66aee0 });
-const JET = new THREE.MeshBasicMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.7 });
+const WATER = new THREE.MeshBasicMaterial({ color: 0x2f6f9c });
+const JET = new THREE.MeshBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.75 });
 
 const box = (g, mat, w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); g.add(m); return m; };
 
@@ -233,8 +234,71 @@ function shukhovTower(scene, x, z) {
   scene.add(g);
 }
 
+// «Галерея Краснодар» по фото: терракотовые стены по настоящему контуру здания, тёмный верхний пояс,
+// светящиеся витрины внизу, вертикальные стеклянные вставки и высокий стеклянный атриум у входа;
+// над входом — белые буквы с засечками прямо на стене, без рекламной плашки.
+function mall(scene, p, chains, textPlane) {
+  const H = 23, n = p.length / 2, o = {};
+  const pos = [], nrm = [];
+  const quad = (arr, ax, az, bx, bz, y0, y1, nx, nz, out = 0) => {
+    const ex = nx * out, ez = nz * out;
+    arr.push(ax + ex, y0, az + ez, bx + ex, y0, bz + ez, bx + ex, y1, bz + ez, ax + ex, y0, az + ez, bx + ex, y1, bz + ez, ax + ex, y1, az + ez);
+  };
+  const glassPos = [], bandPos = [], shopPos = [];
+  let best = null;
+  const dist = (x, z) => { chains.north.project(x, z, -1, o); const d = o.d; chains.south.project(x, z, -1, o); return Math.min(d, o.d); };
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, ax = p[i * 2], az = p[i * 2 + 1], bx = p[j * 2], bz = p[j * 2 + 1];
+    const len = Math.hypot(bx - ax, bz - az);
+    if (len < 0.05) continue;
+    const ux = (bx - ax) / len, uz = (bz - az) / len, nx = -uz, nz = ux;
+    quad(pos, ax, az, bx, bz, 0, H, nx, nz);
+    for (let k = 0; k < 6; k++) nrm.push(nx, 0, nz);
+    quad(bandPos, ax, az, bx, bz, H - 2.2, H + 0.6, nx, nz, 0.25);
+    const mx = (ax + bx) / 2, mz = (az + bz) / 2, d = dist(mx, mz);
+    const street = d < 130 && dist(mx + nx * 3, mz + nz * 3) < d; // стена смотрит на Красную
+    if (!street || len < 8) continue;
+    quad(shopPos, ax, az, bx, bz, 0.3, 4.4, nx, nz, 0.12);
+    for (let a = 9; a + 4 < len - 6; a += 16) { // стеклянные вставки на всю высоту
+      quad(glassPos, ax + ux * a, az + uz * a, ax + ux * (a + 4.5), az + uz * (a + 4.5), 5, H - 2.6, nx, nz, 0.14);
+    }
+    const score = d - Math.min(len, 60) * 0.5;
+    if (!best || score < best.score) best = { score, mx, mz, nx, nz, len };
+  }
+  const mesh = (arr, mat, normals) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    if (normals) g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    const m = new THREE.Mesh(g, mat);
+    m.frustumCulled = false;
+    scene.add(m);
+  };
+  mesh(pos, new THREE.MeshLambertMaterial({ color: 0xb4633a, emissive: 0xb4633a, emissiveIntensity: 0.3 }), nrm);
+  mesh(bandPos, new THREE.MeshBasicMaterial({ color: 0x2a2623, side: THREE.DoubleSide }));
+  mesh(shopPos, new THREE.MeshBasicMaterial({ color: 0xffdca6, side: THREE.DoubleSide }));
+  mesh(glassPos, new THREE.MeshBasicMaterial({ color: 0x9cc3d6, side: THREE.DoubleSide }));
+  const contour = [];
+  for (let i = 0; i < n; i++) contour.push(new THREE.Vector2(p[i * 2], p[i * 2 + 1]));
+  const roof = [];
+  for (const t of THREE.ShapeUtils.triangulateShape(contour, [])) for (const k of t) roof.push(contour[k].x, H, contour[k].y);
+  mesh(roof, new THREE.MeshBasicMaterial({ color: 0x15171b, side: THREE.DoubleSide }));
+  if (!best) return;
+  // атриум у входа и надпись рядом
+  const g = new THREE.Group();
+  g.position.set(best.mx, 0, best.mz);
+  g.rotation.y = Math.atan2(best.nx, best.nz);
+  const AW = Math.min(26, best.len * 0.4), glass = new THREE.MeshBasicMaterial({ color: 0xb9dcea }), frame = new THREE.MeshBasicMaterial({ color: 0x3a4650 });
+  box(g, glass, AW, H + 1.5, 4, 0, (H + 1.5) / 2, 1.9);
+  for (let i = 0; i <= 6; i++) box(g, frame, 0.22, H + 1.5, 0.2, -AW / 2 + i * AW / 6, (H + 1.5) / 2, 3.95);
+  for (let y = 4.5; y < H; y += 4.5) box(g, frame, AW, 0.2, 0.2, 0, y, 3.95);
+  box(g, new THREE.MeshBasicMaterial({ color: 0x2a2623 }), AW + 1.2, 0.8, 5, 0, H + 1.9, 1.9);
+  const text = textPlane('ГАЛЕРЕЯ', 15, 2.6, 'transparent', '#f4efe6', 512, 'Georgia, "Times New Roman", serif');
+  text.position.set(AW / 2 + 11, H - 5.5, 0.2);
+  g.add(text);
+  scene.add(g);
+}
+
 const SIGN_NAMES = {
-  'Галерея Краснодар': ['ГАЛЕРЕЯ КРАСНОДАР', 4.2, '#c8102e'],
   'Вкусно — и точка': ['ВКУСНО — И ТОЧКА', 1.6, '#0b5e3b'],
   'Универмаг "Краснодар"': ['УНИВЕРМАГ «КРАСНОДАР»', 2.2, '#1f3f7a'],
   'МТРК Краснодар': ['МТРК КРАСНОДАР', 2.2, '#1f3f7a'],
@@ -302,7 +366,7 @@ function streetSign(scene, c, name, chain, textPlane, postMat) {
   chain.project(c.x, c.z, -1, o);
   if (o.s < 45) return;
   chain.at(o.s - 30, o);
-  const edge = o.lanes * LANE_W / 2 + 1.5, rx = -o.dz, rz = o.dx; // вправо от направления движения
+  const edge = halfWidth(o.lf) + 1.0, rx = -o.dz, rz = o.dx; // вправо от направления движения
   const g = new THREE.Group();
   const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 6.6, 0.22), postMat);
   post.position.y = 3.3; g.add(post);
@@ -318,9 +382,9 @@ function streetSign(scene, c, name, chain, textPlane, postMat) {
   scene.add(g);
 }
 
-export const CUSTOM_BUILDINGS = { theatre: 'Краснодарский академический театр драмы им. Горького', cinema: 'Кинотеатр «Аврора»' };
+export const CUSTOM_BUILDINGS = { theatre: 'Краснодарский академический театр драмы им. Горького', cinema: 'Кинотеатр «Аврора»', mall: 'Галерея Краснодар' };
 
-export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov, custom }) {
+export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov, custom, addGlow }) {
   const lm = data.landmarks || {}, o = {};
   if (lm.arch) {
     chains.north.project(lm.arch[0], lm.arch[1], -1, o);
@@ -332,6 +396,10 @@ export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named
   const bigFountain = (lm.fountains || []).filter((f) => f[2] > 8);
   if (custom.theatre) theatre(scene, custom.theatre, nearest(bigFountain, custom.theatre) || [chains.north.x[0], chains.north.z[0]], textPlane);
   if (custom.cinema) cinema(scene, custom.cinema, lm.avrora || nearest(bigFountain, custom.cinema), textPlane);
+  if (custom.mall) mall(scene, custom.mall, chains, textPlane);
+  // прожекторы у арки и памятника — тёплые точки света
+  if (addGlow && lm.arch) for (const [dx, dz] of [[-9, -6], [9, -6], [-9, 6], [9, 6]]) addGlow(lm.arch[0] + dx, 1.2, lm.arch[1] + dz, 0xffc27a, 0.9);
+  if (addGlow && lm.avrora) for (const a of [0, 2.1, 4.2]) addGlow(lm.avrora[0] + Math.cos(a) * 7, 1.4, lm.avrora[1] + Math.sin(a) * 7, 0xffd9a8, 0.9);
   const done = new Set();
   for (const b of named) {
     const spec = SIGN_NAMES[b.n];

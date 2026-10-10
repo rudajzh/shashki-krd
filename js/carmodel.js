@@ -119,7 +119,7 @@ export function makeTrafficMesh(type, color) {
   return m;
 }
 
-export function makePlayerCar(color) {
+export function makePlayerCar(color, glowTex, poolTex) {
   const t = CAR_TYPES.sport;
   const root = new THREE.Group(), chassis = new THREE.Group();
   root.add(chassis);
@@ -154,21 +154,31 @@ export function makePlayerCar(color) {
   shadow.position.y = 0.11;
   root.add(shadow);
 
-  // луч дальнего света на асфальте — его видно сзади, когда игрок моргает фарами
-  const bs = new THREE.Shape();
-  bs.moveTo(-0.8, 0); bs.lineTo(0.8, 0); bs.lineTo(5.5, 34); bs.lineTo(-5.5, 34); bs.closePath();
-  const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff3c4, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-  const beam = new THREE.Mesh(new THREE.ShapeGeometry(bs), beamMat);
-  beam.rotation.x = Math.PI / 2; // форма лежит на асфальте и тянется вперёд
-  beam.position.set(0, 0.16, t.len / 2);
+  // свет фар на асфальте: мягкое вытянутое пятно перед машиной; при моргании вспыхивает ярче
+  const beamGeo = new THREE.PlaneGeometry(1, 1);
+  beamGeo.rotateX(-Math.PI / 2);
+  const beamMat = new THREE.MeshBasicMaterial({ map: poolTex, color: 0xfff0cf, transparent: true, opacity: 0.45, fog: false, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -24 });
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.scale.set(13, 1, 46);
+  beam.position.set(0, 0.12, t.len / 2 + 17);
   beam.renderOrder = 5;
-  beam.visible = false;
   root.add(beam);
+
+  // задние огни светятся точками, как у машин потока
+  const tailMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xd01208, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+  const tails = [-1, 1].map((sx) => {
+    const sp = new THREE.Sprite(tailMat);
+    sp.position.set(sx * (t.wid / 2 - 0.32), t.belt - 0.2, -t.len / 2 - 0.05);
+    sp.scale.setScalar(1.2);
+    sp.renderOrder = 7;
+    root.add(sp);
+    return sp;
+  });
 
   return {
     root, chassis, wheels, type: t,
     setColor(c) { body.geometry.dispose(); body.geometry = mergeMixed(bodyParts(t, c, false)); },
-    setBrake(on) { brakeMat.color.setHex(on ? 0xff2a2a : 0x6a0d0d); },
-    setFlash(k) { beam.visible = k > 0; beamMat.opacity = k * 0.5; },
+    setBrake(on) { brakeMat.color.setHex(on ? 0xff2a2a : 0x8a1010); tailMat.color.setHex(on ? 0xff2412 : 0xd01208); for (const sp of tails) sp.scale.setScalar(on ? 2.2 : 1.2); },
+    setFlash(k) { beamMat.opacity = 0.45 + k * 0.5; beam.scale.set(13 + k * 5, 1, 46 + k * 30); }, // ближний горит всегда, моргание — вспышка дальнего
   };
 }

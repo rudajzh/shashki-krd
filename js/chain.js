@@ -1,20 +1,34 @@
-// Ось проезжей части: ломаная с накопленной длиной и числом полос на каждом отрезке.
+// Ось проезжей части: ломаная с накопленной длиной. Число полос в каждой точке дробное (lf):
+// там, где полос становится больше, дорога расширяется плавно, а не ступенькой.
 export const LANE_W = 3.5;
+export const SHOULDER = 0.5; // от крайней линии до бордюра
 
 export class Chain {
-  constructor(pts, lanes) {
+  constructor(pts, lf) {
     const n = pts.length / 2;
     this.n = n;
     this.x = new Float32Array(n);
     this.z = new Float32Array(n);
     this.cum = new Float32Array(n);
-    this.lanes = lanes;
+    this.lf = Float32Array.from(lf);
+    this.lanes = new Int8Array(n - 1); // целое число полос на отрезке — для машин потока
     for (let i = 0; i < n; i++) {
       this.x[i] = pts[i * 2];
       this.z[i] = pts[i * 2 + 1];
-      if (i) this.cum[i] = this.cum[i - 1] + Math.hypot(this.x[i] - this.x[i - 1], this.z[i] - this.z[i - 1]);
+      if (i) {
+        this.cum[i] = this.cum[i - 1] + Math.hypot(this.x[i] - this.x[i - 1], this.z[i] - this.z[i - 1]);
+        this.lanes[i - 1] = Math.max(1, Math.floor((this.lf[i - 1] + this.lf[i]) / 2 + 0.15));
+      }
     }
     this.total = this.cum[n - 1];
+    // кривизна оси на каждом отрезке (1/м, плюс — поворот влево): по ней машина сама вписывается в изгибы улицы
+    this.kappa = new Float32Array(n - 1);
+    const yawOf = (i) => Math.atan2(this.x[i + 1] - this.x[i], this.z[i + 1] - this.z[i]);
+    for (let i = 0; i < n - 1; i++) {
+      const a = Math.max(0, i - 3), b = Math.min(n - 2, i + 3);
+      const d = yawOf(b) - yawOf(a);
+      this.kappa[i] = Math.atan2(Math.sin(d), Math.cos(d)) / Math.max(1, this.cum[b] - this.cum[a]);
+    }
   }
 
   segAt(s) {
@@ -40,10 +54,11 @@ export class Chain {
     const lj = this.cum[j + 1] - this.cum[j] || 1;
     const w = Math.abs(t - 0.5);
     const ex = (this.x[j + 1] - this.x[j]) / lj, ez = (this.z[j + 1] - this.z[j]) / lj;
-    let ox = dx * (1 - w) + ex * w, oz = dz * (1 - w) + ez * w;
+    const ox = dx * (1 - w) + ex * w, oz = dz * (1 - w) + ez * w;
     const ol = Math.hypot(ox, oz) || 1;
     out.dx = ox / ol; out.dz = oz / ol;
     out.lanes = this.lanes[i];
+    out.lf = this.lf[i] + (this.lf[i + 1] - this.lf[i]) * t;
     out.i = i;
     return out;
   }
@@ -72,9 +87,15 @@ export class Chain {
     out.i = bi;
     out.dx = dx; out.dz = dz;
     out.lanes = this.lanes[bi];
+    out.lf = this.lf[bi] + (this.lf[bi + 1] - this.lf[bi]) * bt;
+    out.kappa = this.kappa[bi];
+    // за концами оси дороги нет
+    out.past = (bi === 0 && bt === 0) || (bi === this.n - 2 && bt === 1);
     return out;
   }
 }
 
 // смещение центра полосы влево от оси; полоса 0 — крайняя левая
-export const laneOffset = (lane, lanes) => (lanes / 2 - 0.5 - lane) * LANE_W;
+export const laneOffset = (lane, lf) => (lf / 2 - 0.5 - lane) * LANE_W;
+// полуширина асфальта от оси до бордюра
+export const halfWidth = (lf) => lf * LANE_W / 2 + SHOULDER;
