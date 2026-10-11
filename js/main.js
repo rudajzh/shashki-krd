@@ -1,17 +1,18 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=14';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=14';
-import { LANE_W, laneOffset, halfWidth } from './chain.js?v=14';
-import { makePlayerCar } from './playercar.js?v=14';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=14';
-import { Traffic } from './traffic.js?v=14';
-import { Input } from './input.js?v=14';
-import { Sound } from './audio.js?v=14';
-import { Loop } from './loop.js?v=14';
-import { Smoke } from './smoke.js?v=14';
-import { Signals } from './signals.js?v=14';
-import { Rain } from './weather.js?v=14';
-import { Chase } from './chase.js?v=14';
+import { buildWorld } from './world.js?v=15';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=15';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=15';
+import { makePlayerCar } from './playercar.js?v=15';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=15';
+import { Traffic } from './traffic.js?v=15';
+import { Input } from './input.js?v=15';
+import { Sound } from './audio.js?v=15';
+import { Loop } from './loop.js?v=15';
+import { Smoke } from './smoke.js?v=15';
+import { Signals } from './signals.js?v=15';
+import { Rain } from './weather.js?v=15';
+import { Chase } from './chase.js?v=15';
+import { Streaks } from './streaks.js?v=15';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -57,7 +58,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=14')).json();
+const data = await (await fetch('data/krasnaya.json?v=15')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE };
@@ -72,6 +73,7 @@ scene.add(model.root);
 const traffic = new Traffic(scene, world.chains, world.glowTex, world.poolTex, envMap);
 const loop = new Loop(world, data);
 const smoke = new Smoke(scene);
+const streaks = new Streaks(scene);
 const signals = new Signals(scene, world, world.glowTex, envMap);
 traffic.signals = signals;
 const rain = new Rain(scene);
@@ -96,7 +98,7 @@ function launchCurve(setup) {
     const a = Math.max(0, k - 2), b = Math.min(vAt.length - 1, k + 2);
     table[v] = Math.max(1.5, (vAt[b] - vAt[a]) / ((b - a) * 0.1));
   }
-  return (v) => table[Math.max(0, Math.min(60, Math.round(v)))] * 0.97;
+  return (v) => table[Math.max(0, Math.min(60, Math.round(v)))] * 1.06; // чуть резвее игрока: без точного старта их не обойти
 }
 traffic.launchAcc = launchCurve(CARS[carId].setup);
 
@@ -132,7 +134,7 @@ function placeAtStart() {
   traffic.density = densityFor(1);
   traffic.reset(car);
   traffic.setStalled('north', []); traffic.setStalled('south', []);
-  Object.assign(G.launch, { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g', cine: 0, cineOn: false, mix: 0, rivals: [], winAt: 0, line: null, jump: false, rev: false });
+  Object.assign(G.launch, { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g', cine: 0, cineOn: false, mix: 0, rivals: [], winAt: 0, line: null, jump: false, rev: false, align: null });
   $('launchBtn').hidden = true; $('launchTip').hidden = true; $('lights').hidden = true;
   signals.setEnabled(false);
   rain.reset();
@@ -300,7 +302,7 @@ function tick(dt) {
     for (const n of events.near) {
       G.near++;
       G.combo = Math.min(10, G.combo + 1);
-      chase.boost(14 + G.combo * 1.5); // каждый проход впритирку — ещё несколько корпусов отрыва
+      chase.boost(7 + G.combo * 0.9); // каждый проход впритирку — ещё пара корпусов отрыва
       G.comboT = 5;
       const pts = Math.round((n.oncoming ? 300 : 120) * (n.speed / 28) * (n.gap < 0.5 ? 1.5 : 1)) * G.combo;
       G.score += pts;
@@ -348,10 +350,12 @@ function launchControl(dt) {
     else if (L.rivals.length) pop('Со светофора ушли быстрее');
     L.rivals = [];
   }
-  const sig = signals.enabled ? signals.ahead(key, p.s + PW.hl) : null;
-  const atLine = sig && sig.dist < 11 && sig.dist > -1.5 && p.d < 12 && p.facing > 0;
+  // Стоп-линия считается «нашей», даже если чуть не доехали или немного проскочили: машина сама подравняется
+  const front = p.s + PW.hl, sig = signals.enabled ? signals.ahead(key, front - 8) : null;
+  if (sig) sig.dist = sig.stop - front;
+  const atLine = sig && sig.dist < 15 && sig.dist > -8 && p.d < 12 && p.facing > 0;
   let first = atLine; // первый ли: между нами и стоп-линией никого
-  if (first) for (const c of traffic.cars) if (c.active && c.key === key && c.s > p.s && c.s - c.hl < p.s + PW.hl + sig.dist + 1 && Math.abs(c.off - p.lat) < 1.9) { first = false; break; }
+  if (first) for (const c of traffic.cars) if (c.active && c.key === key && c.s > p.s && c.s - c.hl < sig.stop + 1 && Math.abs(c.off - p.lat) < 1.9) { first = false; break; }
   const red = sig && sig.state !== 'g';
   if (L.jump) { // фальстарт: мотор заглох — стоим до зелёного и ещё секунду, соперники уезжают
     inp.throttle = 0; car.vx = car.vz = 0; car.r = 0;
@@ -362,8 +366,12 @@ function launchControl(dt) {
     // взвели: отсчёт всегда полный, соперники встают в соседние ряды, камера уходит в пролёт
     L.armed = true; L.greenAt = -1; L.cine = 0; L.lit = 0; L.goSnd = false;
     if (sig.left < COUNT) signals.setLeft(sig.g, COUNT);
-    const lane = Math.max(0, Math.min(p.lanes - 1, Math.round(p.lf / 2 - 0.5 - p.lat / LANE_W)));
-    L.rivals = traffic.stageRacers(key, sig.stop, lane);
+    L.rivals = traffic.stageRacers(key, sig.stop, traffic.ghost.lane);
+    // куда подравняться за время пролёта камеры: бампер в 0,8 м перед линией, по середине своего ряда
+    world.chains[key].at(sig.stop - PW.hl - 0.8, tmp);
+    const off = rowOffset(traffic.ghost.lane, tmp), sT = sig.stop - PW.hl - 0.8;
+    L.align = { x: tmp.x + tmp.dz * off, z: tmp.z - tmp.dx * off, yaw: Math.atan2(tmp.dx, tmp.dz) };
+    for (const c of traffic.cars) if (c.active && c.key === key && Math.abs(c.off - off) < 1.9 && Math.abs(c.s - sT) < c.hl + PW.hl + 0.5) L.align = null; // место занято — стоим где стоим
     world.chains[key].at(sig.stop, tmp);
     L.line = { x: tmp.x, z: tmp.z, dx: tmp.dx, dz: tmp.dz, w: tmp.lf * LANE_W / 2 };
   }
@@ -381,13 +389,19 @@ function launchControl(dt) {
     L.lit = lit;
     if (inp.launch && inp.throttle > 0) {                                    // держим: машина стоит, мотор бьётся в отсечку
       inp.throttle = 0; inp.brake = 0; car.vx = car.vz = 0; car.r = 0; L.rev = true;
+      if (L.align) { // откатываемся или подкатываемся к линии
+        const a = L.align, ax = a.x - car.x, az = a.z - car.z, d = Math.hypot(ax, az), m = Math.min(d, 4.5 * dt);
+        if (d > 0.02) { car.x += ax / d * m; car.z += az / d * m; G.wheelSpin += m * Math.sign(ax * Math.sin(car.yaw) + az * Math.cos(car.yaw)) / model.type.wheel; }
+        const dy = Math.atan2(Math.sin(a.yaw - car.yaw), Math.cos(a.yaw - car.yaw));
+        car.yaw += Math.max(-0.9 * dt, Math.min(0.9 * dt, dy));
+      }
       car.rpm += (6300 + (Math.sin(G.time * 55) > 0 ? 500 : -500) - car.rpm) * Math.min(1, dt * 14);
       if (go && G.time - L.greenAt > 1.6) { L.armed = false; pop('Проспал'); if (L.rivals.length) L.winAt = G.time + 3; }
     } else {                                                                 // отпустили
       const late = L.greenAt < 0 ? -1 : G.time - L.greenAt, ms = `${late.toFixed(2).replace('.', ',')} с`;
       if (late < 0) { L.jump = true; pop('Фальстарт'); sound.falseStart(); }
       else if (late <= 0.4) { const b = 1200 * G.lap; G.score += b; L.boost = 1.8; car.vx += Math.sin(car.yaw) * 5; car.vz += Math.cos(car.yaw) * 5; pop(`Идеальный старт · ${ms} · +${b}`); sound.launch(1); sound.whoosh(); }
-      else if (late <= 1.0) { const b = 400 * G.lap; G.score += b; L.boost = 1.2; pop(`Хороший старт · ${ms} · +${b}`); sound.launch(0.6); }
+      else if (late <= 1.0) { const b = 400 * G.lap; G.score += b; L.boost = 1.5; pop(`Хороший старт · ${ms} · +${b}`); sound.launch(0.6); }
       else pop(`Поздно · ${ms}`);
       L.armed = false;
       if (L.rivals.length) L.winAt = late < 0 ? -1 : G.time + 4; // после фальстарта отсчёт пойдёт с зелёного
@@ -450,8 +464,9 @@ function turnDone(res) {
     G.lap++;
     traffic.density = densityFor(G.lap);
     pop(`${what} · круг ${G.lap} · +${bonus}`);
-    if (!chase.active) { chase.start(G.lap); sound.siren(1); }
-  } else pop(`${what} · +${bonus}`);
+    if (!chase.active) { chase.start(G.lap, car.speed); sound.siren(1); setTimeout(() => { if (G.state === 'drive' && chase.active) pop('Погоня! Не сбавляй'); }, 1600); }
+  } else if (chase.lose()) { const b = 1000 * G.lap; G.score += b; pop(`Ушёл от погони · +${b}`); }
+  else pop(`${what} · +${bonus}`);
 }
 
 function crash(rel, why) {
@@ -487,7 +502,8 @@ function draw(dt) {
   const cx = Math.sin(G.camYaw), cz = Math.cos(G.camYaw);
   // после аварии камера отъезжает вверх, чтобы не оказаться внутри чужой машины
   G.lift += ((G.state === 'crash' ? 1 : 0) - G.lift) * Math.min(1, dt * 3);
-  const dist = 6.0 + Math.min(1.9, v * 0.028) + G.lift * 3.5, height = 1.95 + Math.min(0.35, v * 0.005) + G.lift * 4.5;
+  // с ростом скорости камера чуть отъезжает и опускается к асфальту: дорога «бежит» под машину быстрее
+  const dist = 6.0 + Math.min(1.9, v * 0.028) + G.lift * 3.5, height = 1.95 - Math.min(0.32, v * 0.008) + G.lift * 4.5;
   G.shake *= Math.exp(-dt * 4);
   const sh = G.shake + Math.max(0, v - 22) * 0.0011;
   // В меню камера медленно обходит машину спереди; на старте плавно перелетает за неё.
@@ -511,7 +527,7 @@ function draw(dt) {
   }
   if (G.freeCam) { const f = G.freeCam; camera.position.set(f[0], f[1], f[2]); camera.lookAt(f[3], f[4], f[5]); } // отладка: свободная камера
   // угол обзора быстро раскрывается до ~100 км/ч и дальше растёт плавно — скорость чувствуется раньше
-  const fov = 60 + 22 * (1 - Math.exp(-v / 26));
+  const fov = 60 + 27 * (1 - Math.exp(-v / 19));
   if (Math.abs(fov - camera.fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 4); camera.updateProjectionMatrix(); }
   $('vig').style.opacity = G.state === 'drive' ? Math.max(0, Math.min(1, (v - 18) / 45)).toFixed(2) : '0';
 
@@ -531,6 +547,7 @@ function draw(dt) {
     for (const s of [-1, 1]) if (Math.random() < car.slip * 0.9) smoke.emit(car.x - fx * 1.4 + lx * s * 0.8, 0.25, car.z - fz * 1.4 + lz * s * 0.8, car.vx * 0.25, car.vz * 0.25, car.slip);
   }
   smoke.update(dt, camera, renderer.domElement.height);
+  streaks.update(camera.position, G.camYaw, G.state === 'drive' ? v : 0);
   sound.weather(rain.wet, chase.active && G.state === 'drive' ? Math.max(0, 1 - chase.gap / 200) : 0);
   $('cops').style.opacity = chase.active && G.state === 'drive' && chase.gap < 90 ? (0.55 * (1 - chase.gap / 90) * (Math.floor(chase.flash * 5) % 2 ? 1 : 0.35)).toFixed(2) : '0';
   $('cops').classList.toggle('blue', Math.floor(chase.flash * 5) % 2 === 0);

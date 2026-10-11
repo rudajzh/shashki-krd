@@ -147,6 +147,36 @@ function resample(pts, lanes, step) {
 
 const chains = { north: buildChain(true), south: buildChain(false) };
 
+// Где лишняя полоса появляется и пропадает СЛЕВА (левый ряд уходит на поворот), а не справа.
+// У арки: между двумя проездами через бульвар слева добавляется карман для левого поворота, за Бабушкина он кончается.
+// У «Авроры»: южная проезжая часть идёт в четыре ряда, и перед Гаврилова левый ряд становится поворотным.
+// В таких местах правый бордюр идёт ровно, а ось сдвигается влево на половину добавленной полосы.
+const LEFT_ZONES = { north: [[14, 84]], south: [[-1400, -798]] }; // диапазоны по z
+const LANE = 3.5, BASE_LANES = 3;
+for (const [k, c] of Object.entries(chains)) {
+  const n = c.pts.length / 2, ls = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const z = c.pts[i * 2 + 1];
+    if (LEFT_ZONES[k].some(([a, b]) => z > a - 45 && z < b + 45)) ls[i] = Math.max(0, Math.min(1, c.lf[i] - BASE_LANES));
+    // карман у арки короткий (66 м между проездами), в OSM он размазан сглаживанием — задаём его явно:
+    // открывается сразу за южным проездом, полная ширина до северного, за ним сходит на нет
+    if (k === 'north' && z > -10 && z < 120) {
+      const sm = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+      ls[i] = sm(100, 86, z) * (1 - sm(24, 8, z));
+      c.lf[i] = Math.round((BASE_LANES + ls[i]) * 100) / 100;
+    }
+  }
+  const src = c.pts.slice();
+  for (let i = 0; i < n; i++) {
+    if (!ls[i]) continue;
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+    const dx = src[b * 2] - src[a * 2], dz = src[b * 2 + 1] - src[a * 2 + 1], l = Math.hypot(dx, dz) || 1;
+    c.pts[i * 2] = r1(src[i * 2] + dz / l * ls[i] / 2 * LANE);     // влево от хода — (dz, −dx)
+    c.pts[i * 2 + 1] = r1(src[i * 2 + 1] - dx / l * ls[i] / 2 * LANE);
+  }
+  c.ls = ls.map((v) => Math.round(v * 100) / 100);
+}
+
 // Разворот у «Авроры» в жизни — это левый поворот с Красной на Офицерскую, квартал на запад и ещё раз налево
 // на встречную полосу. Сшиваем эти куски OSM в одну дорогу: по ней пойдёт машина и по ней рисуется разметка.
 function buildLink(ids) {
@@ -165,6 +195,17 @@ function buildLink(ids) {
   return resample(pts, lanes, 5);
 }
 const link = buildLink([26942032, 42442416, 47075255, 293181760, 37349718]);
+// В OSM эта связка собрана из коротких кусков разных полос и виляет. По Офицерской она идёт ровно: выглаживаем середину,
+// концы (съезд с Красной и выезд на шоссе Нефтяников) не трогаем.
+{
+  const n = link.pts.length / 2, keep = 5;
+  for (let pass = 0; pass < 40; pass++) {
+    const src = link.pts.slice();
+    for (let i = keep; i < n - keep; i++) for (const d of [0, 1]) link.pts[i * 2 + d] = (src[(i - 1) * 2 + d] + src[i * 2 + d] * 2 + src[(i + 1) * 2 + d]) / 4;
+  }
+  link.pts = link.pts.map(r1);
+  link.lf = link.lf.map(() => 3); // три ряда на всём протяжении
+}
 
 // ---------- расстояние до Красной ----------
 const chainPts = [];
@@ -284,6 +325,11 @@ const addCrossing = (n, k, z, c, extra = {}) => { const q = chainAtZ(chains[k], 
 if (!crossings.some((c) => c.k === 'north' && /Бабушкина/.test(c.n))) addCrossing('улица Бабушкина', 'north', 18, 'secondary');
 addCrossing('проезд у фонтана', 'north', 84, 'tertiary', { link: 1 });
 addCrossing('проезд у фонтана', 'south', 76, 'tertiary', { link: 1 });
+// «зебры» у этой площади — только с внешних сторон, внутри квартала с фонтаном переходов нет (zb — до перекрёстка, za — после)
+for (const c of crossings) {
+  if (/Бабушкина/.test(c.n)) Object.assign(c, c.k === 'north' ? { zb: 0, za: 1 } : { zb: 1, za: 0 });
+  if (c.link) Object.assign(c, c.k === 'north' ? { zb: 1, za: 0 } : { zb: 0, za: 1 });
+}
 // Одесская упирается и в западную проезжую часть — там тоже светофор
 if (!crossings.some((c) => c.k === 'south' && /Одесская/.test(c.n))) addCrossing('Одесская улица', 'south', -443, 'tertiary');
 // пешеходные переходы со светофором посреди квартала (только на западной проезжей части)

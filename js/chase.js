@@ -1,8 +1,8 @@
 // Погоня. После полного круга с островка у театра драмы срывается патруль и садится на хвост.
 // Едешь быстро и проходишь впритирку — отрываешься; тормозишь — догоняют. Догнали — заезд окончен.
 import * as THREE from 'three';
-import { vehicleMesh } from './vehicles.js?v=14';
-import { halfWidth } from './chain.js?v=14';
+import { vehicleMesh } from './vehicles.js?v=15';
+import { halfWidth } from './chain.js?v=15';
 
 export class Chase {
   constructor(scene, world, glowTex, envMap, patrolZ) {
@@ -41,18 +41,23 @@ export class Chase {
 
   reset() { this.active = false; this.car.g.visible = false; this.post.g.visible = true; this.gap = 0; }
 
-  // Начать погоню: lap — номер круга, с каждым кругом патруль быстрее.
-  // Баланс: на втором круге патруль держит около 94 км/ч, на пятом — около 110. В потоке игрок в среднем
-  // идёт 100–120, так что отрыв растёт медленно, а любая заминка (затор, красный свет) его съедает.
-  start(lap) {
+  // Начать погоню: lap — номер круга, с каждым кругом патруль настырнее.
+  // Патруль подстраивается под темп игрока: едет чуть медленнее, чем тот в среднем за последние секунды.
+  // Поэтому на любой скорости погоня остаётся рядом: отрыв растёт медленно и в основном за счёт проходов
+  // впритирку, а любая заминка — затор, красный свет — его тут же съедает. Кончается она либо отрывом,
+  // либо на следующем развороте.
+  start(lap, v = 20) {
     this.active = true;
-    this.gap = 140;
-    this.speed = Math.min(34, 26 + (lap - 2) * 1.5);
-    this.cur = 8; // патруль трогается с места и разгоняется
+    this.gap = 150;
+    this.lap = lap;
+    this.avg = Math.max(30, v);     // средняя скорость игрока, м/с
+    this.cur = Math.max(10, v - 4); // патруль срывается следом, почти с той же скоростью
     this.post.g.visible = false;
   }
   // игрок прошёл впритирку — оторвался на несколько корпусов
-  boost(m) { if (this.active) this.gap = Math.min(460, this.gap + m); }
+  boost(m) { if (this.active) this.gap = Math.min(440, this.gap + m); }
+  // игрок ушёл на разворот — патруль потерял его из виду
+  lose() { if (!this.active) return false; this.active = false; this.car.g.visible = false; this.post.g.visible = true; return true; }
 
   // 'caught' — догнали, 'escaped' — оторвался, иначе null
   update(dt, player, proj, frozen) {
@@ -61,11 +66,15 @@ export class Chase {
     for (const c of [this.post, this.car]) { c.red.scale.setScalar(on ? 2.6 : 0.01); c.blue.scale.setScalar(on ? 0.01 : 2.6); }
     if (!this.active) return null;
     const v = Math.hypot(player.vx, player.vz);
-    // далеко отстал — поднажал, сел на хвост — чуть отпустил: погоня не кончается ни слишком быстро, ни внезапно
-    const want = this.speed + (this.gap > 260 ? 4 : this.gap < 40 ? -2.5 : 0);
-    this.cur += Math.max(-3 * dt, Math.min(3.5 * dt, want - this.cur));
+    if (!frozen) this.avg += (v - this.avg) * Math.min(1, dt / 6);
+    // Держится в темпе игрока, но не тише 115 км/ч. Чем дальше отстал, тем сильнее жмёт; сел на хвост — чуть отпускает.
+    // При ровной езде отрыв сам устанавливается около 150 м (с каждым кругом — ближе): уйти можно только серией
+    // проходов впритирку, а остановка на красный почти наверняка кончается поимкой.
+    const hold = Math.max(90, 165 - (this.lap - 2) * 15);
+    const want = Math.min(72, Math.max(32, this.avg + Math.max(-3.5, Math.min(8, (this.gap - hold) * 0.03))));
+    this.cur += Math.max(-4 * dt, Math.min(4.5 * dt, want - this.cur));
     if (!frozen) this.gap += (v - this.cur) * dt;
-    if (this.gap > 450) { this.active = false; this.car.g.visible = false; this.post.g.visible = true; return 'escaped'; }
+    if (this.gap > 420) { this.active = false; this.car.g.visible = false; this.post.g.visible = true; return 'escaped'; }
     if (this.gap < 5) { this.active = false; return 'caught'; }
     // показываем машину на той же проезжей части позади игрока
     const key = proj.north.d <= proj.south.d ? 'north' : 'south', p = proj[key], c = this.chains[key];

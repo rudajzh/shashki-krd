@@ -1,16 +1,23 @@
 // Ось проезжей части: ломаная с накопленной длиной. Число полос в каждой точке дробное (lf):
 // там, где полос становится больше, дорога расширяется плавно, а не ступенькой.
+//
+// Ряды нумеруются слева направо, и номер ряда не меняется, когда лишняя полоса появляется или пропадает справа.
+// Но кое-где полоса добавляется СЛЕВА (карман для левого поворота) — ls говорит, сколько таких полос в этой точке.
+// Обычный левый ряд всегда имеет номер 1, карман слева от него — номер 0. Диапазон рядов в точке — от lo до hi.
+// Где ряд с номером lane лежит на дороге: laneOffset(lane − 1 + ls, lf).
 export const LANE_W = 3.5;
 export const SHOULDER = 0.5; // от крайней линии до бордюра
 
 export class Chain {
-  constructor(pts, lf) {
+  constructor(pts, lf, ls = null) {
     const n = pts.length / 2;
     this.n = n;
     this.x = new Float32Array(n);
     this.z = new Float32Array(n);
     this.cum = new Float32Array(n);
     this.lf = Float32Array.from(lf);
+    this.ls = ls ? Float32Array.from(ls) : new Float32Array(n);
+    this.lsi = new Int8Array(n - 1);   // целое число левых «лишних» полос на отрезке
     this.lanes = new Int8Array(n - 1); // целое число полос на отрезке — для машин потока
     for (let i = 0; i < n; i++) {
       this.x[i] = pts[i * 2];
@@ -18,6 +25,7 @@ export class Chain {
       if (i) {
         this.cum[i] = this.cum[i - 1] + Math.hypot(this.x[i] - this.x[i - 1], this.z[i] - this.z[i - 1]);
         this.lanes[i - 1] = Math.max(1, Math.floor((this.lf[i - 1] + this.lf[i]) / 2 + 0.15));
+        this.lsi[i - 1] = (this.ls[i - 1] + this.ls[i]) / 2 >= 0.85 ? 1 : 0;
       }
     }
     this.total = this.cum[n - 1];
@@ -59,6 +67,8 @@ export class Chain {
     out.dx = ox / ol; out.dz = oz / ol;
     out.lanes = this.lanes[i];
     out.lf = this.lf[i] + (this.lf[i + 1] - this.lf[i]) * t;
+    out.ls = this.ls[i] + (this.ls[i + 1] - this.ls[i]) * t;
+    out.lo = 1 - this.lsi[i]; out.hi = this.lanes[i] - this.lsi[i];
     out.i = i;
     return out;
   }
@@ -88,6 +98,8 @@ export class Chain {
     out.dx = dx; out.dz = dz;
     out.lanes = this.lanes[bi];
     out.lf = this.lf[bi] + (this.lf[bi + 1] - this.lf[bi]) * bt;
+    out.ls = this.ls[bi] + (this.ls[bi + 1] - this.ls[bi]) * bt;
+    out.lo = 1 - this.lsi[bi]; out.hi = this.lanes[bi] - this.lsi[bi];
     out.kappa = this.kappa[bi];
     // за концами оси дороги нет
     out.past = (bi === 0 && bt === 0) || (bi === this.n - 2 && bt === 1);
@@ -95,7 +107,11 @@ export class Chain {
   }
 }
 
-// смещение центра полосы влево от оси; полоса 0 — крайняя левая
+// смещение центра полосы влево от оси; здесь полоса 0 — крайняя левая на дороге (геометрический номер)
 export const laneOffset = (lane, lf) => (lf / 2 - 0.5 - lane) * LANE_W;
+// то же для ряда потока: его номер lane не зависит от левых карманов (см. пояснение вверху)
+export const rowOffset = (lane, o) => (o.lf / 2 + 0.5 - lane - o.ls) * LANE_W;
+// в каком ряду потока находится точка со смещением lat
+export const rowAt = (lat, o) => Math.max(o.lo, Math.min(o.hi, Math.round(o.lf / 2 + 0.5 - o.ls - lat / LANE_W)));
 // полуширина асфальта от оси до бордюра
 export const halfWidth = (lf) => lf * LANE_W / 2 + SHOULDER;

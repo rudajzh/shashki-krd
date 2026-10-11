@@ -2,7 +2,7 @@
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
 // Один ряд перед каждой стоп-линией остаётся пустым (free): по нему игрок всегда может подъехать первым.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=14';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=15';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
 const CROSS_V = 13; // скорость машин на поперечной улице, м/с
@@ -35,7 +35,7 @@ export class Signals {
     this.byChain = { north: [], south: [] };
     for (const g of this.groups) {
       let x = 0, z = 0;
-      for (const c of g.items) { x += c.x / g.items.length; z += c.z / g.items.length; this.byChain[c.k].push({ stop: c.stopS, g, key: c.k, free: -1, greenT: -99 }); }
+      for (const c of g.items) { x += c.x / g.items.length; z += c.z / g.items.length; this.byChain[c.k].push({ stop: c.stopS, g, key: c.k, c, free: -1, greenT: -99 }); }
       g.cross = g.items.some((c) => !c.ped && !c.link); // есть ли боковая улица, с которой выезжают машины
       g.cx = x; g.cz = z;
       const c0 = g.items[0];
@@ -103,18 +103,18 @@ export class Signals {
     if (!T) return -1;
     const c = T.chains[it.key], o = T.tmp;
     c.at(Math.max(1, it.stop - 3), o);
-    const lanes = o.lanes, count = new Array(lanes).fill(0);
+    const lo = o.lo, hi = o.hi, count = new Array(hi + 1).fill(0);
     for (const car of T.cars) {
       if (!car.active || car.key !== it.key) continue;
       const d = it.stop - car.s - car.hl;
-      if (d < -2 || d > 170 || car.lane >= lanes) continue;
+      if (d < -2 || d > 170 || car.lane > hi || car.lane < lo) continue;
       if (car.stalled) count[car.lane] += 50;
       else if (d > car.v * 3 + 6) count[car.lane] += 1 + (d < 60 ? 2 : 0); // чем ближе к линии, тем труднее ей уйти из ряда
     }
     const pr = T.proj[it.key];
-    const mine = pr && pr.facing > 0 && pr.d < 20 && it.stop - pr.s > 0 && it.stop - pr.s < 420 ? Math.max(0, Math.min(lanes - 1, Math.round(pr.lf / 2 - 0.5 - pr.lat / 3.5))) : 0;
-    let best = 0, bs = Infinity;
-    for (let l = 0; l < lanes; l++) { const sc = count[l] * 10 + Math.abs(l - mine); if (sc < bs) { bs = sc; best = l; } }
+    const mine = pr && pr.facing > 0 && pr.d < 20 && it.stop - pr.s > 0 && it.stop - pr.s < 420 ? Math.max(lo, Math.min(hi, T.ghost.lane)) : lo;
+    let best = lo, bs = Infinity;
+    for (let l = lo; l <= hi; l++) { const sc = count[l] * 10 + Math.abs(l - mine); if (sc < bs) { bs = sc; best = l; } }
     return best;
   }
 
@@ -174,6 +174,12 @@ export class Signals {
       if (st === 'y' && this.traffic) {
         const key = this.traffic.only, pr = this.traffic.proj[key];
         for (const it of this.byChain[key]) if (it.g === g && it.stop - pr.s > 95 && it.stop - pr.s < 330) this.traffic.stageRacers(key, it.stop, -1, it.free);
+        // с боковой улицы едут не только поперёк: кто-то поворачивает на Красную и встраивается в поток —
+        // справа направо в правый ряд, слева (из проезда через бульвар) налево в левый. Подъезжают следом за теми, кто едет прямо.
+        for (const it of this.byChain[key]) if (it.g === g && !it.c.ped && it.stop - pr.s > 50 && it.stop - pr.s < 420) {
+          if (it.c.open[0]) this.traffic.enter(key, it.c, -1, 63);
+          if (it.c.open[1]) this.traffic.enter(key, it.c, 1, 78);
+        }
       }
     }
     if (changed) this.paint();
@@ -201,7 +207,7 @@ export class Signals {
       for (let back = first, n = 0; back <= last && n < 3; back += 15, n++) {
         const c = this.pool.find((q) => !q.busy);
         if (!c) return;
-        c.busy = true; c.g = g; c.dir = dir; c.t = -back; c.lane = dir * -2.2; // правостороннее движение
+        c.busy = true; c.g = g; c.dir = dir; c.t = -back; c.lane = dir * 2.2; // правостороннее движение: справа по ходу
         c.mesh.visible = true;
       }
     }

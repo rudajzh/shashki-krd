@@ -2,8 +2,8 @@
 // и витринами, бульвар, фонари с пятнами света, светофоры, ограждения боковых улиц.
 // Отдаёт проверки столкновений: со зданиями (hitsSolid) и с бордюром (offRoad).
 import * as THREE from 'three';
-import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=14';
-import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=14';
+import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=15';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=15';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -200,7 +200,7 @@ function textPlane(text, w, h, bg, fg, res = 512, font = 'system-ui, -apple-syst
 }
 
 export function buildWorld(data, scene) {
-  const chains = { north: new Chain(data.chains.north.pts, data.chains.north.lf), south: new Chain(data.chains.south.pts, data.chains.south.lf) };
+  const chains = { north: new Chain(data.chains.north.pts, data.chains.north.lf, data.chains.north.ls), south: new Chain(data.chains.south.pts, data.chains.south.lf, data.chains.south.ls) };
   const N = chains.north, S = chains.south, other = { north: S, south: N };
   const C = (h) => new THREE.Color(h);
   const tmp = {}, o = {};
@@ -237,7 +237,22 @@ export function buildWorld(data, scene) {
     if (o.s < 30 || o.s > ch.total - 30) continue;
     const half = c.ped ? 2.5 : /primary|secondary/.test(c.c) ? 8 : 5.5;
     // ped — пешеходный переход посреди квартала, link — проезд через бульвар (боковой улицы нет)
-    crossings.push({ n: c.n, k: c.k, cls: c.c, s: o.s, x: c.x, z: c.z, dx: o.dx, dz: o.dz, half, ped: !!c.ped, link: !!c.link, box: !!c.box, a: c.a || null, stopS: c.ped ? o.s - 4.2 : o.s - half - 7 });
+    // С какой стороны на самом деле есть проезд (боковая улица или проезд через бульвар): [справа, слева].
+    // Только там нет бордюра и можно немного заехать за край.
+    const open = [-1, 1].map((sign) => {
+      if (c.ped) return false;
+      const d = halfWidth(o.lf) + 7, qx = c.x + o.dz * sign * d, qz = c.z - o.dx * sign * d;
+      for (const r of data.roads) {
+        if (/foot|path|pedestrian|cycle|steps|track/.test(r.c)) continue;
+        for (let i = 0; i < r.p.length - 2; i += 2) {
+          const ax = r.p[i], az = r.p[i + 1], bx = r.p[i + 2] - ax, bz = r.p[i + 3] - az, l2 = bx * bx + bz * bz || 1;
+          const t = Math.max(0, Math.min(1, ((qx - ax) * bx + (qz - az) * bz) / l2));
+          if (Math.hypot(ax + bx * t - qx, az + bz * t - qz) < 6.5) return true;
+        }
+      }
+      return false;
+    });
+    crossings.push({ n: c.n, k: c.k, cls: c.c, s: o.s, x: c.x, z: c.z, dx: o.dx, dz: o.dz, half, ped: !!c.ped, link: !!c.link, box: !!c.box, a: c.a || null, zb: c.zb ?? 1, za: c.za ?? 1, open, stopS: c.ped ? o.s - 4.2 : o.s - half - 7 });
   }
   // перед стоп-линией полосы разделены сплошной
   const SOLID = 36;
@@ -260,9 +275,9 @@ export function buildWorld(data, scene) {
   };
 
   // точка у края дороги попадает в устье боковой улицы?
-  const inMouth = (k, x, z) => {
+  const inMouth = (k, x, z, sign) => {
     for (const c of crossings) {
-      if (c.k !== k || c.ped) continue;
+      if (c.k !== k || c.ped || !c.open[sign > 0 ? 1 : 0]) continue;
       const along = (x - c.x) * c.dx + (z - c.z) * c.dz;
       if (Math.abs(along) < c.half + 2.5 && Math.hypot(x - c.x, z - c.z) < 40) return true;
     }
@@ -285,20 +300,24 @@ export function buildWorld(data, scene) {
     disc(rm, r.p[0], r.p[1], w / 2, 0.04, side);
     disc(rm, r.p.at(-2), r.p.at(-1), w / 2, 0.04, side);
   }
+  const reflectors = [];
   for (const key of ['north', 'south']) {
     const ch = chains[key], oth = other[key], p = data.chains[key].pts, lf = ch.lf, n = ch.n;
     const half = (i) => halfWidth(lf[i]);
     ribbon(rm, p, half, 0.05, asphalt);
     const skip = (x, z) => inCrossing(key, x, z, 1);
     // линии между полосами: j-я линия есть там, где правее неё помещается хотя бы полполосы
-    for (let j = 1; j <= 4; j++) {
+    // Линия m отделяет ряд m от ряда m + 1 (см. нумерацию рядов в chain.js): карман слева добавляет линию 0
+    // и не сдвигает остальные — они идут прямо.
+    const ls = ch.ls;
+    for (let j = 0; j <= 4; j++) {
       let from = -1;
       for (let i = 0; i <= n; i++) {
-        const ok = i < n && lf[i] - j >= 0.5;
+        const ok = i < n && j + ls[i] >= 0.5 && lf[i] - j - ls[i] >= 0.5;
         if (ok && from < 0) from = i;
         if (!ok && from >= 0) {
           const f0 = from;
-          if (i - f0 >= 2) dashed(mm, offsetLine(p.slice(f0 * 2, i * 2), (k) => (lf[f0 + k] / 2 - j) * LANE_W), 0.075, 0.08, line, 3, 6, (x, z) => skip(x, z) || inSolid(key, x, z));
+          if (i - f0 >= 2) dashed(mm, offsetLine(p.slice(f0 * 2, i * 2), (k) => (lf[f0 + k] / 2 - j - ls[f0 + k]) * LANE_W), 0.075, 0.08, line, 3, 6, (x, z) => skip(x, z) || inSolid(key, x, z));
           from = -1;
         }
       }
@@ -314,8 +333,15 @@ export function buildWorld(data, scene) {
       const open = new Uint8Array(n);
       const edgeAll = offsetLine(p, (i) => sign * (half(i) + 0.3));
       // на перекрёстке бордюра нет: там просто невидимая граница (съехать на боковую улицу всё равно нельзя)
-      for (let i = 0; i < n; i++) open[i] = onOther(i, sign) || nearLinkLate(edgeAll[i * 2], edgeAll[i * 2 + 1]) || inMouth(key, edgeAll[i * 2], edgeAll[i * 2 + 1]) ? 1 : 0;
+      for (let i = 0; i < n; i++) open[i] = onOther(i, sign) || nearLinkLate(edgeAll[i * 2], edgeAll[i * 2 + 1]) || inMouth(key, edgeAll[i * 2], edgeAll[i * 2 + 1], sign) ? 1 : 0;
       const skipSeg = (i) => open[i] || open[i + 1];
+      // катафоты на бордюре через каждые 7 м: ночью они бегут навстречу и дают почувствовать скорость
+      for (let s = 3.5; s < ch.total - 4; s += 7) {
+        ch.at(s, o);
+        if (skipSeg(o.i)) continue;
+        const e = sign * (halfWidth(o.lf) + 0.12);
+        reflectors.push(o.x + o.dz * e, 0.24, o.z - o.dx * e, sign > 0 ? 1 : 1, sign > 0 ? 0.95 : 0.62, sign > 0 ? 0.85 : 0.18);
+      }
       dashed(mm, offsetLine(p, (i) => sign * lf[i] / 2 * LANE_W), 0.075, 0.08, line, 4, 0, skip);
       ribbon(cm, p, () => 0.16, 0.17, curb, (i) => sign * (half(i) + 0.16), skipSeg);
       // вертикальная грань бордюра
@@ -342,6 +368,11 @@ export function buildWorld(data, scene) {
   {
     const p = LK.pts, lf = LK.lf, half = (i) => halfWidth(lf[i]);
     ribbon(rm, p, half, 0.05, asphalt);
+    // Офицерская — улица в обе стороны: связка идёт по её половине «на запад», слева рисуем встречную половину
+    // (два ряда за двойной сплошной). На изогнутых концах связки встречной половины нет.
+    const EB = (i) => { const t = Math.max(0, Math.min(1, Math.min(i - 8, lkN - 4 - i) / 4)); return 7.6 * t * t * (3 - 2 * t); };
+    ribbon(rm, p, (i) => EB(i) / 2, 0.05, asphalt, (i) => half(i) - 0.5 + EB(i) / 2);
+    for (const [d, on, gap] of [[0.3, 4, 0], [3.8, 3, 6], [7.3, 4, 0]]) dashed(mm, offsetLine(p, (i) => lf[i] / 2 * LANE_W + d * EB(i) / 7.6), 0.075, 0.08, line, on, gap, (x, z) => onMain(x, z, 1));
     for (let j = 1; j <= 2; j++) {
       let from = -1;
       for (let i = 0; i <= lkN; i++) {
@@ -355,14 +386,16 @@ export function buildWorld(data, scene) {
       for (let i = 0; i < lkN; i++) open[i] = onMain(edge[i * 2], edge[i * 2 + 1], 1.2) ? 1 : 0;
       const skipSeg = (i) => open[i] || open[i + 1];
       dashed(mm, offsetLine(p, (i) => sign * lf[i] / 2 * LANE_W), 0.075, 0.08, line, 4, 0, (x, z) => onMain(x, z, 1));
-      ribbon(cm, p, () => 0.16, 0.17, curb, (i) => sign * (half(i) + 0.16), skipSeg);
+      const out = (i) => (sign > 0 ? EB(i) : 0); // слева бордюр стоит за встречной половиной
+      for (let i = 0; i < lkN; i++) { const e = sign * (half(i) + out(i)), a = Math.max(0, i - 1), b = Math.min(lkN - 1, i + 1), dx = p[b * 2] - p[a * 2], dz = p[b * 2 + 1] - p[a * 2 + 1], l = Math.hypot(dx, dz) || 1; edge[i * 2] = p[i * 2] + dz / l * e; edge[i * 2 + 1] = p[i * 2 + 1] - dx / l * e; }
+      ribbon(cm, p, () => 0.16, 0.17, curb, (i) => sign * (half(i) + out(i) + 0.16), skipSeg);
       for (let i = 0; i < lkN - 1; i++) {
         if (skipSeg(i)) continue;
         const ax = edge[i * 2], az = edge[i * 2 + 1], bx = edge[i * 2 + 2], bz = edge[i * 2 + 3];
         cm.tri(ax, 0.05, az, bx, 0.05, bz, bx, 0.17, bz, curbSide);
         cm.tri(ax, 0.05, az, bx, 0.17, bz, ax, 0.17, az, curbSide);
       }
-      ribbon(cm, p, () => 1.7, 0.17, walk, (i) => sign * (half(i) + 0.32 + 1.7), skipSeg);
+      ribbon(cm, p, () => 1.7, 0.17, walk, (i) => sign * (half(i) + out(i) + 0.32 + 1.7), skipSeg);
     }
   }
 
@@ -415,8 +448,8 @@ export function buildWorld(data, scene) {
     };
     if (c.ped) cross(c.s - 2, c.s + 2, line, zebra);
     else {
-      cross(c.s - c.half - 5.5, c.s - c.half - 1.5, line, zebra);
-      cross(c.s + c.half + 1.5, c.s + c.half + 5.5, line, zebra);
+      if (c.zb) cross(c.s - c.half - 5.5, c.s - c.half - 1.5, line, zebra);
+      if (c.za) cross(c.s + c.half + 1.5, c.s + c.half + 5.5, line, zebra);
     }
     cross(c.stopS - 0.2, c.stopS + 0.2, line, solid);
     if (c.box) {
@@ -477,7 +510,49 @@ export function buildWorld(data, scene) {
       for (let gz = Math.floor(z0 / cell); gz <= Math.floor(z1 / cell); gz++) addToGrid(gx + ',' + gz, idx);
   }
   const nearStreet = (x, z) => { N.project(x, z, -1, tmp); const d = tmp.d; S.project(x, z, -1, tmp); return Math.min(d, tmp.d); };
-  for (const b of data.buildings) {
+  // ---------- город за первой линией ----------
+  // В данных есть только дома у самой улицы. Там, где за ними (или вместо них) пусто, игрок видел бы чёрную землю.
+  // Достраиваем типовые дома вторым и третьим рядом и редкие высотки вдали: заехать туда нельзя, но город «продолжается».
+  const extra = [];
+  {
+    let sd = 4242;
+    const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const blobs = data.buildings.map((b) => { let x = 0, z = 0, r = 0; const k = b.p.length / 2; for (let i = 0; i < k; i++) { x += b.p[i * 2] / k; z += b.p[i * 2 + 1] / k; } for (let i = 0; i < k; i++) r = Math.max(r, Math.hypot(b.p[i * 2] - x, b.p[i * 2 + 1] - z)); return [x, z, r]; });
+    const lm = data.landmarks, keep = [];
+    for (const f of lm.fountains || []) keep.push([f[0], f[1], 40]);
+    for (const [k, r] of [['avrora', 60], ['bell', 40], ['clock', 30], ['stadium', 150], ['kubgtu', 75], ['site', 55], ['hotel', 45], ['arch', 30]]) if (lm[k]) keep.push([lm[k][0], lm[k][1], r]);
+    const inGreen = (x, z) => data.greens.some((g) => { let inside = false; for (let i = 0, j = g.length / 2 - 1; i < g.length / 2; j = i++) { const xi = g[i * 2], zi = g[i * 2 + 1], xj = g[j * 2], zj = g[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside; } return inside; });
+    const nearRoad = (x, z, r) => {
+      for (const rd of data.roads) for (let i = 0; i < rd.p.length - 2; i += 2) {
+        const ax = rd.p[i], az = rd.p[i + 1], bx = rd.p[i + 2] - ax, bz = rd.p[i + 3] - az, l2 = bx * bx + bz * bz || 1, t = Math.max(0, Math.min(1, ((x - ax) * bx + (z - az) * bz) / l2));
+        if (Math.hypot(ax + bx * t - x, az + bz * t - z) < r) return true;
+      }
+      for (let i = 0; i < data.link.pts.length; i += 2) if (Math.hypot(data.link.pts[i] - x, data.link.pts[i + 1] - z) < r + 12) return true;
+      return false;
+    };
+    const tryBox = (x, z, yaw, w, d, h) => {
+      const r = Math.hypot(w, d) / 2;
+      if (blobs.some((b) => Math.hypot(b[0] - x, b[1] - z) < b[2] + r + 3) || keep.some((k) => Math.hypot(k[0] - x, k[1] - z) < k[2] + r)) return;
+      if (nearRoad(x, z, r * 0.8 + 5) || inGreen(x, z)) return;
+      const c = Math.cos(yaw), sn = Math.sin(yaw), q = [];
+      for (const [u, v] of [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]) q.push(x + u * c + v * sn, z - u * sn + v * c);
+      extra.push({ h, s: Math.floor(rr() * 1000), p: q });
+      blobs.push([x, z, r]);
+    };
+    for (const ch of [N, S]) for (let s = -160; s < ch.total + 160; s += 31) {
+      ch.at(Math.max(0.5, Math.min(ch.total - 0.5, s)), o);
+      const over = s < 0 ? s : s > ch.total ? s - ch.total : 0; // за концами оси город тоже продолжается
+      const ax = o.x + o.dx * over, az = o.z + o.dz * over, yaw = Math.atan2(o.dx, o.dz) + Math.PI / 2;
+      for (const sign of [-1, 1]) for (const [dist, hMin, hMax] of [[26, 3, 7], [62, 4, 10], [104, 5, 14], [170, 12, 24], [245, 14, 30]]) {
+        const far = dist > 150;
+        if (far && rr() < 0.55) continue; // высотки вдали стоят редко
+        const dd = halfWidth(o.lf) + dist + rr() * 10, x = ax + o.dz * sign * dd + o.dx * (rr() - 0.5) * 8, z = az - o.dx * sign * dd + o.dz * (rr() - 0.5) * 8;
+        if (nearStreet(x, z) < halfWidth(o.lf) + dist - 8) continue; // с этой стороны бульвар или соседняя проезжая часть
+        tryBox(x, z, yaw, far ? 20 + rr() * 16 : 14 + rr() * 6, far ? 20 + rr() * 10 : 22 + rr() * 9, (hMin + Math.floor(rr() * (hMax - hMin + 1))) * 3.2 + 1.2);
+      }
+    }
+  }
+  for (const b of [...data.buildings, ...extra]) {
     let p = b.p;
     const n = p.length / 2;
     if (n < 3) continue;
@@ -713,6 +788,16 @@ export function buildWorld(data, scene) {
   const poles = new THREE.InstancedMesh(poleG, lampMat, lampAt.length);
   const arms = new THREE.InstancedMesh(armG, lampMat, lampAt.length);
   const glowTex = glowTexture(), poolTex = poolTexture();
+  {
+    const n = reflectors.length / 6, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos.set(reflectors.slice(i * 6, i * 6 + 3), i * 3); col.set(reflectors.slice(i * 6 + 3, i * 6 + 6), i * 3); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.55, map: glowTex, vertexColors: true, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+    pts.frustumCulled = false; pts.renderOrder = 6;
+    scene.add(pts);
+  }
   const poolG = new THREE.PlaneGeometry(1, 1);
   poolG.rotateX(-Math.PI / 2);
   const pools = new THREE.InstancedMesh(poolG, new THREE.MeshBasicMaterial({ map: poolTex, color: 0xffa860, transparent: true, opacity: 0.5, fog: false, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -16 }), lampAt.length);
@@ -808,13 +893,20 @@ export function buildWorld(data, scene) {
   }
   // точка за бордюром? Дорога — это асфальт любой из двух проезжих частей.
   const probe = {};
-  function offRoad(x, z, hintN, hintS) {
-    N.project(x, z, hintN, probe);
-    if (!probe.past && Math.abs(probe.lat) <= halfWidth(probe.lf)) return false;
-    S.project(x, z, hintS, probe);
-    if (!probe.past && Math.abs(probe.lat) <= halfWidth(probe.lf)) return false;
-    return true;
-  }
+  // В устье боковой улицы граница отодвинута на MOUTH метров: можно вильнуть туда, объезжая автобус,
+  // но уехать по боковой улице нельзя.
+  const MOUTH = 9;
+  const mouthAt = (k, s, lat) => {
+    for (const c of crossings) if (c.k === k && !c.ped && Math.abs(s - c.s) < c.half + 1.5 && c.open[lat > 0 ? 1 : 0]) return true;
+    return false;
+  };
+  const onRoad = (ch, k, x, z, hint) => {
+    ch.project(x, z, hint, probe);
+    if (probe.past) return false;
+    const a = Math.abs(probe.lat), h = halfWidth(probe.lf);
+    return a <= h || (a <= h + MOUTH && mouthAt(k, probe.s, probe.lat));
+  };
+  function offRoad(x, z, hintN, hintS) { return !onRoad(N, 'north', x, z, hintN) && !onRoad(S, 'south', x, z, hintS); }
 
   return { chains, startS, hitsSolid, offRoad, glowTex, poolTex, crossings, barriers, tickClock: live.tick, stats: { buildings: polys.length, trees: treePos.length, lamps: lampAt.length } };
 }
