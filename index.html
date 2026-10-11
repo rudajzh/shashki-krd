@@ -11,12 +11,13 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
 <canvas id="view"></canvas>
 <div id="vig"></div>
+<div id="cops"></div>
 
 <div id="hud" hidden>
   <div class="hud-top">
@@ -24,13 +25,16 @@
     <div class="box combo" id="comboBox"><span class="label">Серия</span><b id="combo">×1</b></div>
     <div class="box right"><span class="label" id="lapLabel">Круг 1 · до разворота</span><b id="left">0 м</b></div>
   </div>
+  <div class="chips"><div class="chip" id="chase" hidden>ПОГОНЯ · <b id="chaseGap">0 м</b></div><div class="chip rain" id="rain" hidden>Дождь · скользко</div></div>
   <div id="pop"></div>
+  <div class="tip" id="launchTip" hidden>Зажми газ и ЛАНЧ (Shift) · отпусти ЛАНЧ на зелёный</div>
   <div class="speed"><b id="speed">0</b><span>км/ч</span><i id="gear">1</i></div>
   <div class="hint" id="rotate">Поверните телефон горизонтально</div>
 </div>
 
 <div id="touch" hidden>
   <div class="pad left">
+    <button data-ctl="launch" id="launchBtn" class="launch" aria-label="Ланч" hidden>ЛАНЧ</button>
     <button data-ctl="flash" class="flash" aria-label="Моргнуть фарами">Моргнуть</button>
     <div class="row">
       <button data-ctl="left" aria-label="Влево">◀</button>
@@ -45,7 +49,7 @@
 
 <div id="drift" hidden>
   <div class="driftBox">
-    <b>ЖМИ! ДЕРЖИ ЗАНОС</b>
+    <b>ДЕРЖИ ГАЗ — ДЕРЖИ ЗАНОС</b>
     <div class="driftMeter"><i id="driftBar"></i></div>
   </div>
 </div>
@@ -56,11 +60,11 @@
     <p class="route">Красная по кругу: театр драмы ↔ «Аврора» · круг 5,5 км</p>
     <div class="swatches" id="swatches"></div>
     <button id="go" class="primary">Поехали</button>
-    <p class="keys">«Моргнуть» (клавиша F) — машина впереди уступит полосу</p>
+    <p class="keys">«Моргнуть» (пробел) — машина впереди уступит полосу</p>
     <p class="best" id="best"></p>
     <a class="ghostlink" href="car.html">Посмотреть машину вблизи</a>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.10</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.11</p>
   </div>
 </div>
 
@@ -79,6 +83,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=10"></script>
+<script type="module" src="js/main.js?v=11"></script>
 </body>
 </html>

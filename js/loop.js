@@ -1,7 +1,7 @@
 // Кольцо: у «Авроры» машина уходит налево на Офицерскую, огибает кинотеатр и встаёт на встречную полосу,
 // на юге — разворачивается на месте перед гостиницей. Пока идёт разворот, по пути машину ведёт игра,
 // а игрок быстрыми нажатиями держит занос: не нажимает — машина просто спокойно поворачивает.
-import { laneOffset, halfWidth } from './chain.js?v=10';
+import { laneOffset, halfWidth } from './chain.js?v=11';
 
 const CAP = 26, BRAKE = 13, ALAT = 20; // потолок скорости на развороте, торможение и боковое ускорение, под которое подбирается скорость в дуге
 
@@ -119,8 +119,23 @@ export class Loop {
     a.yawFix = Math.atan2(Math.sin(car.yaw - this.yawAt(a, 0)), Math.cos(car.yaw - this.yawAt(a, 0)));
   }
 
-  // игрок нажал — занос держится
-  tap() { if (this.active) this.active.power = Math.min(1, this.active.power + 0.2); }
+  // Место стоянки перед стартом: на площади справа от дороги, носом к проезжей части.
+  parking(world) {
+    const o = this.N.at(world.startS - 4, this.tmp), off = halfWidth(o.lf) + 7;
+    return { x: o.x - o.dz * off, z: o.z + o.dx * off, yaw: Math.atan2(o.dx, o.dz) + Math.PI / 2, s: world.startS - 4 };
+  }
+  // Вступление: машина срывается с площадки, с заносом вылетает на дорогу и встаёт в полосу.
+  intro(car, world) {
+    const pk = this.parking(world), fx = Math.sin(pk.yaw), fz = Math.cos(pk.yaw);
+    const ctrl = [[pk.x, pk.z], [pk.x + fx * 3.5, pk.z + fz * 3.5], [pk.x + fx * 7, pk.z + fz * 7]];
+    for (const d of [13, 24, 38, 54, 70]) ctrl.push(this.lanePoint(this.N, pk.s + d, 0));
+    this.begin('intro', spline(ctrl), car, 4.2, 0.42);
+    this.active.auto = true; // занос сам, нажимать не нужно
+    this.active.hold = ['north', pk.s - 120, pk.s + 640, pk.s + 150];
+  }
+
+  // игрок держит газ — занос держится (как в жизни: в дрифте газ открыт)
+  feed(on, dt) { const a = this.active; if (a && !a.auto) a.power = Math.max(0, Math.min(1, a.power + (on ? 1.9 : -1.1) * dt)); }
 
   posAt(a, s, out) {
     s = Math.max(0, Math.min(a.total, s));
@@ -134,6 +149,7 @@ export class Loop {
   // направление пути: по двум точкам в паре метров до и после — плавно, без ступенек
   yawAt(a, s) {
     const p = [0, 0], q = [0, 0];
+    s = Math.max(2.2, Math.min(a.total - 2.2, s)); // у самых концов пути обе точки слипались, и направление «прыгало» — отсюда было ложное торможение перед выходом
     this.posAt(a, s - 2.2, p); this.posAt(a, s + 2.2, q);
     return Math.atan2(q[0] - p[0], q[1] - p[1]);
   }
@@ -143,9 +159,9 @@ export class Loop {
     const a = this.active;
     a.fresh = false;
     a.time += dt;
-    a.power = Math.max(0, a.power - dt * 0.85);
+    if (a.auto) a.power = 1;
     a.powerSum += a.power * dt;
-    const want = a.speedAt(a.s);
+    const want = a.auto ? Math.max(a.speedAt(a.s), a.v) : a.speedAt(a.s); // на вступлении только разгон: скорость к концу не сбрасываем
     a.v += Math.max(-BRAKE * dt, Math.min(7 * dt, want - a.v));
     a.s = Math.min(a.total, a.s + a.v * dt);
     const pos = [0, 0];
@@ -156,7 +172,7 @@ export class Loop {
     const kappa = Math.atan2(Math.sin(y1 - y0), Math.cos(y1 - y0)) / 6;
     const fade = Math.min(1, (a.total - a.s) / 16);
     const target = Math.max(-a.driftMax, Math.min(a.driftMax, kappa * a.driftGain)) * fade * Math.min(1, a.power * 1.25);
-    a.drift += (target - a.drift) * Math.min(1, dt * 3.2);
+    a.drift += (target - a.drift) * Math.min(1, dt * 2.6);
     const prevYaw = car.yaw;
     car.x = pos[0]; car.z = pos[1]; car.yaw = yaw + a.drift + a.yawFix * Math.exp(-a.time * 5);
     a.yaw = yaw;

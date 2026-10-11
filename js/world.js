@@ -2,8 +2,8 @@
 // и витринами, бульвар, фонари с пятнами света, светофоры, ограждения боковых улиц.
 // Отдаёт проверки столкновений: со зданиями (hitsSolid) и с бордюром (offRoad).
 import * as THREE from 'three';
-import { Chain, LANE_W, halfWidth } from './chain.js?v=10';
-import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=10';
+import { Chain, LANE_W, halfWidth } from './chain.js?v=11';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=11';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -469,12 +469,13 @@ export function buildWorld(data, scene) {
   for (let i = 0; i < data.trees.length; i += 2) treePos.push([data.trees[i], data.trees[i + 1]]);
   const bm = new Mesher(), pm = new Mesher(), path = C(PAL.path);
   const walkLamps = [], benches = [];
-  let lastStrip = null, hint = -1, lastPark = null, lastCorner = null;
+  let lastStrip = null, hint = -1, lastPark = null, lastCorner = null, lastIsl = null;
   // занято ли место: дом, площадь перед кинотеатром, фонтан, памятник
   const insideBuilding = (x, z) => { const list = grid.get(Math.floor(x / cell) + ',' + Math.floor(z / cell)); if (list) for (const k of list) if (pointInPoly(polys[k], x, z)) return true; return false; };
   const keepOut = [];
   for (const f of data.landmarks.fountains || []) keepOut.push([f[0], f[1], f[2] > 8 ? 36 : f[2] + 2]);
   if (data.landmarks.avrora) keepOut.push([data.landmarks.avrora[0], data.landmarks.avrora[1], 12]);
+  if (data.landmarks.bell) keepOut.push([data.landmarks.bell[0], data.landmarks.bell[1], 17]);
   if (custom.cinema) { let cx = 0, cz = 0; const k = custom.cinema.length / 2; for (let j = 0; j < k; j++) { cx += custom.cinema[j * 2] / k; cz += custom.cinema[j * 2 + 1] / k; } keepOut.push([cx, cz, 62]); plaza = [cx, cz]; }
   const blocked = (x, z, pad) => insideBuilding(x, z) || keepOut.some((k) => Math.hypot(k[0] - x, k[1] - z) < k[2] + pad);
   for (let i = 0; i < N.n; i += 2) {
@@ -483,7 +484,24 @@ export function buildWorld(data, scene) {
     hint = tmp.i;
     const wN = halfWidth(N.lf[i]), wS = halfWidth(tmp.lf);
     const free = tmp.d - wN - wS;
-    if (free < 6 || tmp.past) continue;
+    if (tmp.past) continue;
+    if (free > 0.8 && free < 6) { // узкий островок между проезжими частями: сплошные по краям и косая штриховка
+      const ax = N.x[i], az = N.z[i], dist = tmp.d;
+      S.at(tmp.s, o);
+      const ox = o.x, oz = o.z, at = (fromN) => { const t = fromN / dist; return [ax + (ox - ax) * t, az + (oz - az) * t]; };
+      const isl = { i, a: at(wN - 0.35), b: at(dist - wS + 0.35) };
+      if (lastIsl && i - lastIsl.i === 2) {
+        rm.flatQuad(lastIsl.a, isl.a, isl.b, lastIsl.b, 0.05, C(PAL.asphalt));
+        for (const [u0, u1] of [[0, 0.22], [0.5, 0.72]]) { // две косые полосы на каждые 12 м
+          const L0 = (u) => [lastIsl.a[0] + (isl.a[0] - lastIsl.a[0]) * u, lastIsl.a[1] + (isl.a[1] - lastIsl.a[1]) * u];
+          const R0 = (u) => [lastIsl.b[0] + (isl.b[0] - lastIsl.b[0]) * u, lastIsl.b[1] + (isl.b[1] - lastIsl.b[1]) * u];
+          mm.flatQuad(L0(u0), L0(u0 + 0.07), R0(u1 + 0.07), R0(u1), 0.08, C(PAL.line));
+        }
+      }
+      lastIsl = isl;
+      continue;
+    }
+    if (free < 6) continue;
     if (tmp.d > 70) { // широкий сквер: газон, деревья россыпью, диагональные дорожки, фонари
       if (tmp.d > 165) continue;
       const ax = N.x[i], az = N.z[i], dist = tmp.d;
@@ -650,20 +668,20 @@ export function buildWorld(data, scene) {
     ch.at(c.s - c.half - 8.5, o);
     const px = o.x - o.dz * (halfWidth(o.lf) + 0.9), pz = o.z + o.dx * (halfWidth(o.lf) + 0.9);
     put(inst.pole, px, 2.3, pz, 0); put(inst.head, px, 4.2, pz, Math.atan2(o.dx, o.dz));
-    addGlow(px - o.dx * 0.25, 3.85, pz - o.dz * 0.25, 0x35ff7a, 0.9);
+    c.light = [px - o.dx * 0.25, 3.85, pz - o.dz * 0.25]; // сам огонь рисует модуль светофоров: он меняет цвет
   }
   const batch = (geo, mat, list) => {
-    if (!list.length) return;
+    if (!list.length) return null;
     const m = new THREE.InstancedMesh(geo, mat, list.length);
     list.forEach((mm4, i) => m.setMatrixAt(i, mm4));
     m.frustumCulled = false;
     scene.add(m);
+    return m;
   };
   // доска лежит вдоль местной оси x, а ограждение стоит поперёк улицы — отсюда поворот на 90° выше
   const boardG = new THREE.BoxGeometry(2.9, 0.45, 0.1);
   { const uv = boardG.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 1.2); }
-  batch(boardG, new THREE.MeshBasicMaterial({ map: stripeTexture() }), inst.board);
-  batch(new THREE.BoxGeometry(0.1, 1.3, 0.1), new THREE.MeshLambertMaterial({ color: 0x8a8d92 }), inst.leg);
+  const barriers = [batch(boardG, new THREE.MeshBasicMaterial({ map: stripeTexture() }), inst.board), batch(new THREE.BoxGeometry(0.1, 1.3, 0.1), new THREE.MeshLambertMaterial({ color: 0x8a8d92 }), inst.leg)].filter(Boolean);
   batch(new THREE.BoxGeometry(0.16, 4.6, 0.16), lampMat, inst.pole);
   batch(new THREE.BoxGeometry(0.42, 1.2, 0.36), new THREE.MeshLambertMaterial({ color: 0x1a1c1f }), inst.head);
 
@@ -672,7 +690,7 @@ export function buildWorld(data, scene) {
   N.project(data.marks.theatre[0], data.marks.theatre[1], -1, a);
   const startS = a.s;
 
-  buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov, custom, addGlow });
+  const live = buildLandmarks(scene, data, chains, { textPlane, addSolid, named, shukhov, custom, addGlow });
 
   const glowGeo = new THREE.BufferGeometry();
   glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glow.pos, 3));
@@ -711,5 +729,5 @@ export function buildWorld(data, scene) {
     return true;
   }
 
-  return { chains, startS, hitsSolid, offRoad, glowTex, poolTex, crossings, stats: { buildings: polys.length, trees: treePos.length, lamps: lampAt.length } };
+  return { chains, startS, hitsSolid, offRoad, glowTex, poolTex, crossings, barriers, tickClock: live.tick, stats: { buildings: polys.length, trees: treePos.length, lamps: lampAt.length } };
 }

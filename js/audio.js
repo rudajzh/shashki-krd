@@ -33,6 +33,12 @@ export class Sound {
       return { f, g };
     };
     this.squeal = loop('bandpass', 1900, 9);
+    this.rainN = loop('highpass', 2600, 0.4);
+    // сирена патруля: тон, который «качается» между двумя нотами
+    this.sirenO = ctx.createOscillator(); this.sirenO.type = 'square'; this.sirenO.frequency.value = 700;
+    this.sirenG = ctx.createGain(); this.sirenG.gain.value = 0;
+    const sf = ctx.createBiquadFilter(); sf.type = 'lowpass'; sf.frequency.value = 1800;
+    this.sirenO.connect(sf); sf.connect(this.sirenG); this.sirenG.connect(this.master); this.sirenO.start();
     this.wind = loop('lowpass', 500, 0.5);
   }
 
@@ -50,6 +56,25 @@ export class Sound {
     this.wind.g.gain.setTargetAtTime(active ? Math.min(0.22, speed * speed / 14000) : 0, t, 0.2);
     this.wind.f.frequency.setTargetAtTime(300 + speed * 14, t, 0.2);
   }
+
+  // шум дождя и сирена: wet и near — от 0 до 1
+  weather(wet, near) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.rainN.g.gain.setTargetAtTime(wet * 0.13, t, 0.4);
+    this.sirenG.gain.setTargetAtTime(near * 0.07, t, 0.15);
+    this.sirenO.frequency.setTargetAtTime(Math.floor(t * 2.2) % 2 ? 930 : 690, t, 0.04);
+  }
+  // гудок недовольного водителя
+  horn() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime, g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.11, t + 0.03); g.gain.setValueAtTime(0.11, t + 0.38); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    g.connect(this.master);
+    for (const f of [415, 520]) { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + 0.55); }
+  }
+  // короткая «крякалка»
+  siren() { if (!this.ctx) return; const t = this.ctx.currentTime; this.sirenG.gain.cancelScheduledValues(t); this.sirenG.gain.setValueAtTime(0.16, t); this.sirenG.gain.setTargetAtTime(0, t + 0.5, 0.12); }
 
   burst(freq, q, vol, dur, sweep = 1) {
     if (!this.ctx) return;

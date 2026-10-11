@@ -281,10 +281,16 @@ for (const e of poi) {
 
 // арка в OSM — отношение 7636786 (building=triumphal_arch); в выгрузке POI её нет, берём центр оттуда же
 if (!landmarks.arch) landmarks.arch = [-57, -1];
-// южный разворот — на месте, за Длинной перед гостиницей
-const turns = { southZ: 1352 };
+// южный разворот и пост ДПС — по схеме движения с Яндекс Карт, которую прислал пользователь
+const turns = { southZ: 1246, patrolZ: 1197 }; // разворот — в разрыве разметки напротив площади; патруль — на островке сразу за Будённого
 // цветочные часы у Гаврилова (в OSM — точка «Цветочные часы», в выгрузке достопримечательностей её нет)
 landmarks.clock = [76, -837];
+// стадион «Динамо»: в OSM его чаши нет, место и размер сняты со схемы Яндекс Карт (овал с дорожкой восточнее Красной)
+landmarks.stadium = [274, -502];
+// корпус КубГТУ с круглым углом (в OSM это отношение, в выгрузку домов не попало)
+landmarks.kubgtu = [-149, 604];
+// колокол-памятник святой Екатерине в большом фонтане перед аркой
+landmarks.bell = [-70, 47];
 
 const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks, turns, link };
 fs.writeFileSync(new URL('data/krasnaya.json', root), JSON.stringify(out));

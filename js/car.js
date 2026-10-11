@@ -39,7 +39,7 @@ export function alignSteer(car, roadYaw, tau = 2.6) {
   return Math.max(-0.1, Math.min(0.1, delta / steerLockAt(u, car.s)));
 }
 
-const tyre = (alpha, load, S) => -S.grip * load * Math.sin(S.tyreC * Math.atan(S.tyreB * alpha));
+const tyre = (alpha, load, S, k) => -S.grip * k * load * Math.sin(S.tyreC * Math.atan(S.tyreB * alpha));
 
 export class Car {
   constructor(setup = CAR_SETUP) {
@@ -47,6 +47,7 @@ export class Car {
     this.x = 0; this.z = 0; this.yaw = 0;
     this.vx = 0; this.vz = 0; this.r = 0;
     this.steer = 0;
+    this.gripK = 1; // 1 — сухо; в дождь меньше
     this.reset(0, 0, 0);
   }
 
@@ -59,6 +60,7 @@ export class Car {
     this.slip = 0;                  // 0..1 — насколько шины сорваны
     this.rpm = 900; this.gear = 1;
     this.reverse = false;
+    this.brakeHeld = false;
   }
 
   get speed() { return Math.hypot(this.vx, this.vz); }
@@ -80,7 +82,10 @@ export class Car {
     const cd = Math.cos(this.steer), sd = Math.sin(this.steer);
 
     // задний ход включается, когда стоим и держим тормоз
-    if (au < 0.6 && inp.brake > 0.1 && inp.throttle < 0.1) this.reverse = true;
+    // задняя включается только новым нажатием тормоза на стоящей машине: если просто дотормозил до нуля
+    // и держишь педаль (например, на светофоре), машина стоит, а не пятится в поток
+    if (au < 0.6 && inp.brake > 0.1 && inp.throttle < 0.1 && !this.brakeHeld) this.reverse = true;
+    this.brakeHeld = inp.brake > 0.1;
     if (inp.throttle > 0.1 && u > -0.6) this.reverse = false;
     const rev = this.reverse && u < 0.6;
     // на задней передаче педали меняются ролями: «тормоз» едет назад, «газ» тормозит
@@ -96,13 +101,13 @@ export class Car {
     const dir = u > 0.3 ? 1 : u < -0.3 ? -1 : u / 0.3;
     // полный привод 35/65: резвый старт, но задняя ось всё ещё нагружена сильнее и срывается первой
     const drive = rev ? (u > -9 ? -inp.brake * 5200 : 0) : throttle * Math.min(S.driveForce, S.power / Math.max(au, 4));
-    const Fb = brake * S.brakeG * S.mass * G;
+    const Fb = brake * S.brakeG * this.gripK * S.mass * G; // на мокром и тормозит хуже
     let Fxf = drive * 0.35 - dir * Fb * 0.62;
     let Fxr = drive * 0.65 - dir * Fb * 0.38;
     if (throttle < 0.05) Fxr -= dir * 700; // торможение двигателем
     // круг трения: чем больше шина тратит на разгон/торможение, тем меньше остаётся на поворот.
     // Пределы 0.8 — это «АБС и антипробуксовка»: шины не срываются от одного нажатия педали.
-    const capR = S.grip * Fzr, capF = S.grip * Fzf;
+    const capR = S.grip * this.gripK * Fzr, capF = S.grip * this.gripK * Fzf;
     Fxr = Math.max(-capR * 0.8, Math.min(capR * 0.8, Fxr));
     Fxf = Math.max(-capF * 0.85, Math.min(capF * 0.85, Fxf));
     let rearGrip = 1;
@@ -116,8 +121,8 @@ export class Car {
     const wfx = u * cd + vfy * sd, wfy = -u * sd + vfy * cd;
     const alphaF = Math.atan2(wfy, Math.max(Math.abs(wfx), 3));
     const alphaR = Math.atan2(vry, Math.max(au, 3));
-    const Fyf = tyre(alphaF, Fzf, S) * kf; // поперёк переднего колеса
-    const Fyr = tyre(alphaR, Fzr, S) * kr;
+    const Fyf = tyre(alphaF, Fzf, S, this.gripK) * kf; // поперёк переднего колеса
+    const Fyr = tyre(alphaR, Fzr, S, this.gripK) * kr;
 
     // суммарные силы в осях кузова
     const drag = S.dragK * u * au + dir * 190;
