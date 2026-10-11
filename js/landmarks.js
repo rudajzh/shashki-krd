@@ -1,7 +1,7 @@
 // Узнаваемые места Красной: Александровская арка, «Аврора», фонтаны, башня Шухова,
 // вывески на зданиях и синие таблички с названиями поперечных улиц.
 import * as THREE from 'three';
-import { halfWidth } from './chain.js?v=15';
+import { halfWidth } from './chain.js?v=16';
 
 // ночью знаковые объекты подсвечены: материал немного светится собственным цветом
 const L = (color, extra) => new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.28, ...extra });

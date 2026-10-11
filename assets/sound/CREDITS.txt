@@ -1,0 +1,4 @@
+Записи взяты с BigSoundBank (bigsoundbank.com), лицензия CC0 — общественное достояние, можно использовать без условий.
+
+v8-idle.wav     — «AC Cobra Engine», № 0534, автор Joseph Sardin. Вырезан ровный участок холостого хода и закольцован.
+tire-squeal.wav — «Tire squeal», № 0500, автор Joseph Sardin. Склеены ровные середины нескольких взвизгов в одну петлю.

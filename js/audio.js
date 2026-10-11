@@ -1,4 +1,7 @@
-// Звук синтезируется на лету: мотор, визг шин, свист при обгоне впритирку, удар, гудки, сигналы старта.
+// Звук: мотор, визг шин, свист при обгоне впритирку, удар, гудки, сигналы старта.
+// Почти всё синтезируется на лету; две вещи — настоящие записи (assets/sound, лицензия CC0):
+// рокот V8 на холостых и малых оборотах и визг шин. Запись мотора есть только на холостом ходу, поэтому
+// она звучит внизу и в середине (высота меняется вместе с оборотами), а к верхам уступает место синтезу.
 //
 // Мотор собран по образцу записи настоящего V10: главная гармоника идёт на 2,5 оборота коленвала
 // (по пять цилиндров на каждый выпускной тракт), над ней — ряд кратных, между ними слабые «половинные»,
@@ -46,6 +49,16 @@ export class Sound {
     this.setEngine(this.kind);
 
     this.squeal = loop('bandpass', 1900, 9);
+    // настоящие записи: подгружаются в фоне, до тех пор (и если не загрузятся) работает синтез
+    this.smp = {};
+    const sample = (name, url) => fetch(url).then((r) => r.arrayBuffer()).then((b) => new Promise((ok, no) => ctx.decodeAudioData(b, ok, no))).then((buf) => {
+      const src = ctx.createBufferSource(), g = ctx.createGain();
+      src.buffer = buf; src.loop = true; g.gain.value = 0;
+      src.connect(g); g.connect(this.master); src.start();
+      this.smp[name] = { src, g };
+    }).catch(() => { /* нет файла или формат не поддержан — остаёмся на синтезе */ });
+    sample('idle', 'assets/sound/v8-idle.wav?v=16');
+    sample('squeal', 'assets/sound/tire-squeal.wav?v=16');
     this.rainN = loop('highpass', 2600, 0.4);
     // сирена патруля: тон, который «качается» между двумя нотами
     this.sirenO = ctx.createOscillator(); this.sirenO.type = 'square'; this.sirenO.frequency.value = 700;
@@ -100,6 +113,17 @@ export class Sound {
       if (this.lastThr > 0.5 && throttle < 0.1 && rpm > 4300) for (let i = 0, n = 2 + Math.floor(Math.random() * 4); i < n; i++) setTimeout(() => this.burst(500 + Math.random() * 1100, 2.5, 0.2 + Math.random() * 0.15, 0.04), 60 + i * 90 + Math.random() * 70);
     }
     this.lastGear = gear; this.lastThr = throttle;
+    // запись V8: на холостых звучит как есть, с оборотами ускоряется и выше 2200 об/мин постепенно уходит под синтез
+    if (this.smp.idle) {
+      const fade = Math.max(0.2, Math.min(1, 1 - (rpm - 2200) / 3800));
+      this.smp.idle.src.playbackRate.setTargetAtTime(Math.max(0.6, Math.min(5, rpm * E.rev / 1020)), t, 0.03);
+      this.smp.idle.g.gain.setTargetAtTime(active ? fade * (0.1 + 0.1 * throttle) * (this.kind === 'v8' ? 1 : 0.6) : 0, t, 0.07);
+    }
+    if (this.smp.squeal) {
+      this.smp.squeal.src.playbackRate.setTargetAtTime(0.5 + speed * 0.0045, t, 0.1);
+      this.smp.squeal.g.gain.setTargetAtTime(active ? Math.min(1, slip) * 0.5 : 0, t, 0.05);
+      slip *= 0.3; // шумовой визг остаётся лёгким призвуком
+    }
     this.squeal.g.gain.setTargetAtTime(active ? slip * 0.16 : 0, t, 0.05);
     this.squeal.f.frequency.setTargetAtTime(1500 + speed * 12, t, 0.1);
     this.wind.g.gain.setTargetAtTime(active ? Math.min(0.22, speed * speed / 14000) : 0, t, 0.2);
@@ -166,7 +190,15 @@ export class Sound {
   lightOn() { this.tone(740, 0.13); }                                       // загорелся очередной красный огонь
   lightsGo() { this.tone(1480, 0.5, 0.2); this.tone(1110, 0.5, 0.1); }      // зелёный
   falseStart() { this.tone(160, 0.45, 0.2, 'sawtooth'); this.tone(151, 0.45, 0.2, 'sawtooth'); }
-  launch(k = 1) { this.burst(1700, 5, 0.5 * k, 0.5, 0.75); this.burst(260, 0.7, 0.7 * k, 0.3, 0.5); } // шины взвизгнули, машина сорвалась
+  // шины взвизгнули, машина сорвалась
+  launch(k = 1) {
+    this.burst(260, 0.7, 0.7 * k, 0.3, 0.5);
+    if (!this.smp.squeal) { this.burst(1700, 5, 0.5 * k, 0.5, 0.75); return; }
+    const ctx = this.ctx, t = ctx.currentTime, src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = this.smp.squeal.src.buffer; src.playbackRate.value = 0.62;
+    g.gain.setValueAtTime(0.55 * k, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    src.connect(g); g.connect(this.master); src.start(t); src.stop(t + 1);
+  }
 
   flash() { this.burst(2600, 5, 0.35, 0.05); setTimeout(() => this.burst(2600, 5, 0.35, 0.05), 140); }
   whoosh() { this.burst(900, 1.2, 0.5, 0.35, 0.35); }

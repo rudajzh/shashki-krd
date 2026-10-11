@@ -1,8 +1,8 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { rowOffset, rowAt, halfWidth } from './chain.js?v=15';
-import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=15';
+import { rowOffset, rowAt, halfWidth } from './chain.js?v=16';
+import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=16';
 
 const AHEAD = 520, BEHIND = 180;
 const LANES_FULL = 4.8; // при стольких рядах на дорогу выходит весь поток

@@ -1,18 +1,18 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=15';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=15';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=15';
-import { makePlayerCar } from './playercar.js?v=15';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=15';
-import { Traffic } from './traffic.js?v=15';
-import { Input } from './input.js?v=15';
-import { Sound } from './audio.js?v=15';
-import { Loop } from './loop.js?v=15';
-import { Smoke } from './smoke.js?v=15';
-import { Signals } from './signals.js?v=15';
-import { Rain } from './weather.js?v=15';
-import { Chase } from './chase.js?v=15';
-import { Streaks } from './streaks.js?v=15';
+import { buildWorld } from './world.js?v=16';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=16';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=16';
+import { makePlayerCar } from './playercar.js?v=16';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=16';
+import { Traffic } from './traffic.js?v=16';
+import { Input } from './input.js?v=16';
+import { Sound } from './audio.js?v=16';
+import { Loop } from './loop.js?v=16';
+import { Smoke } from './smoke.js?v=16';
+import { Signals } from './signals.js?v=16';
+import { Rain } from './weather.js?v=16';
+import { Chase } from './chase.js?v=16';
+import { Streaks } from './streaks.js?v=16';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -58,7 +58,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=15')).json();
+const data = await (await fetch('data/krasnaya.json?v=16')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE };

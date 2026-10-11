@@ -14,6 +14,7 @@ edit('car.html', (s) => s.replace(/(js\/showroom\.js)(\?v=\d+)?/g, `$1?v=${v}`))
 for (const f of fs.readdirSync(new URL('js/', root))) {
   if (f.endsWith('.js')) edit('js/' + f, (s) => s
     .replace(/(from '\.\/[\w-]+\.js)(\?v=\d+)?'/g, `$1?v=${v}'`)
-    .replace(/(fetch\('data\/[\w-]+\.json)(\?v=\d+)?'/g, `$1?v=${v}'`));
+    .replace(/(fetch\('data\/[\w-]+\.json)(\?v=\d+)?'/g, `$1?v=${v}'`)
+    .replace(/(assets\/sound\/[\w-]+\.wav)(\?v=\d+)?'/g, `$1?v=${v}'`));
 }
 console.log('версия 0.' + v);
