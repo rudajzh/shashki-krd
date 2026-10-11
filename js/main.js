@@ -1,21 +1,21 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=21';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=21';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=21';
-import { makePlayerCar } from './playercar.js?v=21';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=21';
-import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=21';
-import { Traffic } from './traffic.js?v=21';
-import { Input } from './input.js?v=21';
-import { Sound } from './audio.js?v=21';
-import { Loop } from './loop.js?v=21';
-import { Smoke } from './smoke.js?v=21';
-import { Signals } from './signals.js?v=21';
-import { Rain } from './weather.js?v=21';
-import { Chase } from './chase.js?v=21';
-import { Streaks } from './streaks.js?v=21';
-import { SpeedBlur } from './post.js?v=21';
-import { Mirror } from './mirror.js?v=21';
+import { buildWorld } from './world.js?v=22';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=22';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=22';
+import { makePlayerCar } from './playercar.js?v=22';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=22';
+import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=22';
+import { Traffic } from './traffic.js?v=22';
+import { Input } from './input.js?v=22';
+import { Sound } from './audio.js?v=22';
+import { Loop } from './loop.js?v=22';
+import { Smoke } from './smoke.js?v=22';
+import { Signals } from './signals.js?v=22';
+import { Rain } from './weather.js?v=22';
+import { Chase } from './chase.js?v=22';
+import { Streaks } from './streaks.js?v=22';
+import { SpeedBlur } from './post.js?v=22';
+import { Mirror } from './mirror.js?v=22';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -64,7 +64,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=21')).json();
+const data = await (await fetch('data/krasnaya.json?v=22')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE, gelik: GELIK, lada: PRIORA, seven: CLASSIC };
@@ -381,7 +381,17 @@ function tick(dt) {
       G.left = loop.distance(traffic.proj);
     }
     // погоня
-    const res = chase.update(dt, car, traffic.proj, !!loop.active);
+    // В погоне: светофоры впереди дают зелёный, машина впереди уступает на сирену. Если красный всё же застал
+    // (его не успели переключить — поперёк ещё едут), патруль не приближается, пока игрок перед ним стоит.
+    let waitRed = false;
+    if (chase.active && !loop.active) {
+      const key = traffic.only, p = traffic.proj[key];
+      G.chaseT = (G.chaseT || 0) - dt;
+      if (G.chaseT <= 0) { G.chaseT = 0.7; if (signals.enabled) signals.chaseGreen(key, p.s, car.speed); traffic.flash(car); }
+      const sg = signals.enabled ? signals.ahead(key, p.s + PW.hl) : null;
+      waitRed = !!sg && sg.state !== 'g' && sg.dist < 70 && sg.dist > -2;
+    }
+    const res = chase.update(dt, car, traffic.proj, !!loop.active || waitRed);
     if (res === 'caught' && G.state === 'drive') { sound.siren(1); sound.crash(); endRun('busted'); }
     else if (res === 'escaped') { const b = 1500 * G.lap; G.score += b; pop(`Оторвался · +${b}`); }
     $('chase').hidden = !chase.active;
