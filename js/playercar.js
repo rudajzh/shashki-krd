@@ -1,7 +1,7 @@
 // Машина игрока: детальная модель + её свет (габариты, стоп-сигналы, конус фар на асфальте, прожектор).
 import * as THREE from 'three';
-import { buildCar } from './cardetail.js?v=19';
-import { buildInterior } from './interior.js?v=19';
+import { buildCar } from './cardetail.js?v=20';
+import { buildInterior } from './interior.js?v=20';
 
 // конус света на асфальте: начинается у бампера, расширяется и гаснет вдаль
 function beamTexture() {

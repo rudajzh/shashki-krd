@@ -1,21 +1,21 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=19';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=19';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=19';
-import { makePlayerCar } from './playercar.js?v=19';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=19';
-import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=19';
-import { Traffic } from './traffic.js?v=19';
-import { Input } from './input.js?v=19';
-import { Sound } from './audio.js?v=19';
-import { Loop } from './loop.js?v=19';
-import { Smoke } from './smoke.js?v=19';
-import { Signals } from './signals.js?v=19';
-import { Rain } from './weather.js?v=19';
-import { Chase } from './chase.js?v=19';
-import { Streaks } from './streaks.js?v=19';
-import { SpeedBlur } from './post.js?v=19';
-import { Mirror } from './mirror.js?v=19';
+import { buildWorld } from './world.js?v=20';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=20';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=20';
+import { makePlayerCar } from './playercar.js?v=20';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=20';
+import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=20';
+import { Traffic } from './traffic.js?v=20';
+import { Input } from './input.js?v=20';
+import { Sound } from './audio.js?v=20';
+import { Loop } from './loop.js?v=20';
+import { Smoke } from './smoke.js?v=20';
+import { Signals } from './signals.js?v=20';
+import { Rain } from './weather.js?v=20';
+import { Chase } from './chase.js?v=20';
+import { Streaks } from './streaks.js?v=20';
+import { SpeedBlur } from './post.js?v=20';
+import { Mirror } from './mirror.js?v=20';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -64,7 +64,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=19')).json();
+const data = await (await fetch('data/krasnaya.json?v=20')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE, gelik: GELIK, lada: PRIORA, seven: CLASSIC };
@@ -136,16 +136,23 @@ function launchCurve(setup) {
 traffic.launchAcc = launchCurve(CARS[carId].setup);
 
 // сменить машину: другая модель, другой характер и другой голос мотора
+const models = { [carId]: model }; // построенные машины: вторая примерка той же модели — мгновенная
 function setCar(id, save = true) {
   carId = id; if (save) store.set('car', id);
   scene.remove(model.root);
-  model = makePlayerCar(color, world.glowTex, envMap, SPECS[id]);
+  model = models[id] || (models[id] = makePlayerCar(color, world.glowTex, envMap, SPECS[id]));
+  model.setColor(color);
   scene.add(model.root);
   PW.hl = model.type.len / 2; PW.hw = model.type.wid / 2;
   car.s = CARS[id].setup;
   sound.setEngine(CARS[id].engine);
   traffic.launchAcc = launchCurve(CARS[id].setup);
+  matchRivals(id);
 }
+// Соперники со светофора — одного класса с игроком: к «Семёрке» подъезжают заряженные «Жигули» и «Лады»,
+// к «Гелику» — спортивные седаны, к купе — такие же купе. Разгоняются они как сам игрок и держат до 80 % его максималки.
+const RIVALS = { coupe: ['coupe', 'coupe', 'coupe'], sedan: ['lux', 'coupe', 'lux'], gelik: ['lux', 'gelik', 'lux'], lada: ['lada', 'seven', 'lada'], seven: ['seven', 'lada', 'seven'] };
+function matchRivals(id) { traffic.setRacers(RIVALS[id], Math.min(72, carStats(id).top / 3.6 * 0.8)); }
 
 const G = {
   state: 'menu', // menu | drive | crash | finish
@@ -402,6 +409,7 @@ function launchControl(dt) {
     // взвели: отсчёт всегда полный, соперники встают в соседние ряды, камера уходит в пролёт
     L.armed = true; L.greenAt = -1; L.cine = 0; L.lit = 0; L.goSnd = false;
     if (sig.left < COUNT) signals.setLeft(sig.g, COUNT);
+    signals.wave(key, sig.stop, Math.max(sig.left, COUNT)); // дальше — «зелёная волна» на два перекрёстка
     L.rivals = traffic.stageRacers(key, sig.stop, traffic.ghost.lane);
     // куда подравняться за время пролёта камеры: бампер в 0,8 м перед линией, по середине своего ряда
     world.chains[key].at(sig.stop - PW.hl - 0.8, tmp);
@@ -436,8 +444,8 @@ function launchControl(dt) {
     } else {                                                                 // отпустили
       const late = L.greenAt < 0 ? -1 : G.time - L.greenAt, ms = `${late.toFixed(2).replace('.', ',')} с`;
       if (late < 0) { L.jump = true; pop('Фальстарт'); sound.falseStart(); }
-      else if (late <= 0.4) { const b = 1200 * G.lap; G.score += b; L.boost = 1.8; car.vx += Math.sin(car.yaw) * 5; car.vz += Math.cos(car.yaw) * 5; pop(`Идеальный старт · ${ms} · +${b}`); sound.launch(1); sound.whoosh(); }
-      else if (late <= 1.0) { const b = 400 * G.lap; G.score += b; L.boost = 1.5; pop(`Хороший старт · ${ms} · +${b}`); sound.launch(0.6); }
+      else if (late <= 0.35) { const b = 1200 * G.lap; G.score += b; L.boost = 1.8; car.vx += Math.sin(car.yaw) * 5; car.vz += Math.cos(car.yaw) * 5; pop(`Идеальный старт · ${ms} · +${b}`); sound.launch(1); sound.whoosh(); }
+      else if (late <= 0.7) { const b = 400 * G.lap; G.score += b; L.boost = 1.3; pop(`Хороший старт · ${ms} · +${b}`); sound.launch(0.6); }
       else pop(`Поздно · ${ms}`);
       L.armed = false;
       if (L.rivals.length) L.winAt = late < 0 ? -1 : G.time + 4; // после фальстарта отсчёт пойдёт с зелёного
@@ -552,7 +560,7 @@ function draw(dt) {
   // после аварии камера отъезжает вверх, чтобы не оказаться внутри чужой машины
   G.lift += ((G.state === 'crash' ? 1 : 0) - G.lift) * Math.min(1, dt * 3);
   // vs — скорость «по ощущению»: на «Семёрке» 90 км/ч подаются как почти 200 на купе
-  const driving = G.state === 'drive', vs = v * feel.sense, spd = 1 - Math.exp(-vs / 16);
+  const driving = G.state === 'drive', vs = v * feel.sense, spd = 1 - Math.exp(-vs / 16), low = Math.max(0, feel.sense - 1);
   G.push += ((driving && !loop.active ? Math.max(-12, Math.min(9, car.ax)) : 0) - G.push) * Math.min(1, dt * 3.2); // тяга и торможение, сглаженные
   G.bank += ((driving ? Math.max(-0.022, Math.min(0.022, -car.ay * 0.0014)) : 0) - G.bank) * Math.min(1, dt * 4);
   G.shake *= Math.exp(-dt * 4);
@@ -567,15 +575,18 @@ function draw(dt) {
   const wide = camera.aspect > 1, sideShift = wide ? 1.7 : 0, mlx = car.x + Math.cos(oa) * sideShift, mlz = car.z - Math.sin(oa) * sideShift, mly = (wide ? 0.8 : 0.1) + tallCar * 0.3;
   if (driving && G.blend < 1) G.blend = Math.min(1, G.blend + dt / 2.6);
   const bl = G.state === 'menu' ? 0 : G.blend * G.blend * (3 - 2 * G.blend);
-  const view = G.state === 'crash' || G.state === 'busted' ? 0 : G.view; // после аварии смотрим со стороны
+  // после аварии смотрим со стороны; на выезде с площадки камера сначала долетает за машину и только потом
+  // переключается на капот или в салон — иначе она пролетала бы сквозь кузов
+  const view = G.state === 'crash' || G.state === 'busted' || bl < 1 ? 0 : G.view;
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
   let px, py, pz, lx, ly, lz, fovBase, fovGain, amp;
   if (view === 0) {
     // камера стоит выше крыши и смотрит на дорогу далеко перед машиной: видно, что делается впереди
-    const tall = Math.max(0, model.spec.top(-0.3) - 1.47) * 1.4;
-    const dist = 6.7 - 0.9 * spd + G.push * 0.08 + G.lift * 3.5, height = 2.6 + tall - 0.3 * spd + G.lift * 4.5;
+    const tall = Math.max(0, model.spec.top(-0.3) - 1.47) * 2.3; // за высокой машиной камера стоит заметно выше, иначе за ней ничего не видно
+    // на слабых машинах камера на скорости садится ниже и ближе: асфальт бежит быстрее, а размывать картинку не нужно
+    const dist = 6.7 + tall * 0.9 - (0.9 + low * 1.0) * spd + G.push * 0.08 + G.lift * 3.5, height = 2.6 + tall - (0.3 + low * 0.55) * spd + G.lift * 4.5;
     px = car.x - cx * dist; pz = car.z - cz * dist; py = height;
-    lx = car.x + cx * 17; ly = 0.5 + tall * 0.5; lz = car.z + cz * 17;
+    lx = car.x + cx * 17; ly = 0.5 + tall * 0.25; lz = car.z + cz * 17;
     fovBase = 60; fovGain = 24; amp = 0.016;
   } else if (view === 1) {
     const [h, f] = model.spec.hoodCam;
@@ -595,14 +606,14 @@ function draw(dt) {
   camera.lookAt(mlx + (lx - mlx) * bl, mly + (ly - mly) * bl, mlz + (lz - mlz) * bl);
   camera.rotateZ((G.bank + jx * sk * 0.0012 + (view ? G.roll * 0.5 : 0)) * bl);
   // салон виден только изнутри; из-за руля ближняя граница обзора ближе, иначе руль и приборы обрежет
-  const inside = view === 2 && bl > 0.97 && G.launch.mix < 0.03 && !G.freeCam;
+  const inside = view === 2 && G.launch.mix < 0.5 && !G.freeCam;
   if (model.interior.group.visible !== inside) {
     model.interior.group.visible = inside;
     // изнутри кузов виден с изнанки: без этого сквозь капот и стойки просвечивала бы дорога
     model.mats.paint.side = model.mats.dark.side = inside ? THREE.DoubleSide : THREE.FrontSide;
     model.mats.paint.needsUpdate = model.mats.dark.needsUpdate = true;
   }
-  const near = view !== 0 && bl > 0.97 && !G.freeCam ? 0.12 : 0.6;
+  const near = view !== 0 && G.launch.mix < 0.5 && !G.freeCam ? 0.12 : 0.6;
   if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
   if (inside) {
     G.wheelTurn += (-car.steer / Math.max(0.02, steerLockAt(Math.abs(car.u), car.s)) * 1.5 - G.wheelTurn) * Math.min(1, dt * 12);
@@ -611,7 +622,7 @@ function draw(dt) {
   // Пролёт перед стартом: камера идёт низко вдоль стоп-линии, слева направо, лицом к машинам —
   // видно, кто стоит рядом. К последней секунде она возвращается за машину игрока.
   if (G.launch.mix > 0.002 && G.launch.line) {
-    const Ln = G.launch.line, m = G.launch.mix, u = Math.min(1, G.launch.cine / 3.6), e = u * u * (3 - 2 * u);
+    const Ln = G.launch.line, m = G.view === 0 ? G.launch.mix : G.launch.mix > 0.5 ? 1 : 0, u = Math.min(1, G.launch.cine / 3.6), e = u * u * (3 - 2 * u); // из салона — резкой сменой плана
     const lat = (0.9 - 1.8 * e) * (Ln.w + 2.5), ahead = 9.5 - 2.5 * e;
     const qx = Ln.x + Ln.dx * ahead + Ln.dz * lat, qz = Ln.z + Ln.dz * ahead - Ln.dx * lat, qy = 0.9 + 0.5 * e;
     const tx = Ln.x - Ln.dx * 3.5 + Ln.dz * lat * 0.45, tz = Ln.z - Ln.dz * 3.5 - Ln.dx * lat * 0.45;
@@ -679,7 +690,7 @@ function draw(dt) {
   // зеркало заднего вида — во всех видах, кроме пролёта перед стартом
   const showMirror = driving && !G.freeCam && bl > 0.95 && G.launch.mix < 0.15;
   if ($('mirror').hidden === showMirror) $('mirror').hidden = !showMirror;
-  blur.render(scene, camera, driving && !G.freeCam ? Math.min(1, Math.max(0, (v * CARS[carId].feel.sense - 16) / 48) + Math.max(0, G.push) * 0.02) : 0, dt);
+  blur.render(scene, camera, driving && !G.freeCam ? Math.min(1, Math.max(0, (v - 18) / 55) + Math.max(0, G.push) * 0.02) : 0, dt); // размытие — от настоящей скорости, у всех машин одинаково
   if (showMirror) mirror.render(scene, car.x, car.z, car.yaw, model.type.len / 2, 1.2 + Math.max(0, model.spec.top(-0.3) - 1.47) * 0.8, $('mirror').getBoundingClientRect());
 }
 
@@ -745,7 +756,13 @@ function stepCar(step) {
 function openGarage(open) {
   G.garage = open; G.orbit = 0;
   $('garage').hidden = !open; $('menu').hidden = open;
-  if (open) paintGarage();
+  if (open) {
+    paintGarage();
+    // остальные машины строим заранее, по одной, пока игрок смотрит на первую: листание не будет подвисать
+    const rest = Object.keys(CARS).filter((id) => !models[id]);
+    const next = () => { const id = rest.shift(); if (!id || !G.garage) return; models[id] = makePlayerCar(color, world.glowTex, envMap, SPECS[id]); setTimeout(next, 120); };
+    setTimeout(next, 300);
+  }
   else if (carId !== picked) setCar(picked, false); // ушли, не выбрав — возвращаем свою
 }
 tap('carPrev', () => stepCar(-1));
@@ -759,6 +776,7 @@ canvas.addEventListener('pointerdown', (e) => { if (G.garage) dragX = e.clientX;
 addEventListener('pointermove', (e) => { if (dragX !== null && G.garage) { G.orbit += (e.clientX - dragX) * 0.008; dragX = e.clientX; } });
 addEventListener('pointerup', () => { dragX = null; });
 paintCar();
+matchRivals(carId);
 // способ рулить на экране телефона: стрелки, руль или наклон
 const paintCtl = () => { for (const b of $('ctlSeg').children) b.classList.toggle('sel', b.dataset.m === input.mode); };
 for (const b of $('ctlSeg').children) b.addEventListener('click', () => { input.setMode(b.dataset.m); store.set('ctl', input.mode); paintCtl(); });

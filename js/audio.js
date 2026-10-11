@@ -70,8 +70,8 @@ export class Sound {
       src.connect(g); g.connect(this.master); src.start();
       this.smp[name] = { src, g };
     }).catch(() => { /* нет файла или формат не поддержан — остаёмся на синтезе */ });
-    sample('idle', 'assets/sound/v8-idle.wav?v=19');
-    sample('squeal', 'assets/sound/tire-squeal.wav?v=19');
+    sample('idle', 'assets/sound/v8-idle.wav?v=20');
+    sample('squeal', 'assets/sound/tire-squeal.wav?v=20');
     this.rainN = loop('highpass', 2600, 0.4);
     // сирена патруля: тон, который «качается» между двумя нотами
     this.sirenO = ctx.createOscillator(); this.sirenO.type = 'square'; this.sirenO.frequency.value = 700;

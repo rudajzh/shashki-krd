@@ -1,8 +1,8 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { rowOffset, rowAt, halfWidth } from './chain.js?v=19';
-import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=19';
+import { rowOffset, rowAt, halfWidth } from './chain.js?v=20';
+import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=20';
 
 const AHEAD = 520, BEHIND = 180;
 const LANES_FULL = 4.8; // при стольких рядах на дорогу выходит весь поток
@@ -13,7 +13,8 @@ const OFF = [0, 0, 0], HEAD = [1.0, 0.93, 0.78], TAIL = [0.75, 0.04, 0.03], STOP
 
 export class Traffic {
   constructor(scene, chains, glowTex, poolTex, envMap, counts = { north: 62, south: 0 }) {
-    this.chains = chains;
+    this.chains = chains; this.scene = scene; this.envMap = envMap;
+    this.racerTop = 50; // до какой скорости разгоняются гонщики, м/с
     this.cars = [];
     this.time = 0;
     this.density = 1; // доля машин, которым разрешено выезжать: растёт с каждым кругом
@@ -214,6 +215,26 @@ export class Traffic {
   }
   release() { this.held = null; }
 
+  // Соперники подбираются под машину игрока: kinds — на чём они ездят, top — их потолок скорости
+  setRacers(kinds, top) {
+    const colors = [0xd92b2b, 0xf0b400, 0x1f5fd0];
+    let i = 0;
+    for (const car of this.cars) {
+      if (!car.racer) continue;
+      const kind = kinds[i % kinds.length], t = VEHICLES[kind].spec;
+      if (car.kind !== kind) {
+        const vis = car.mesh.visible;
+        this.scene.remove(car.mesh);
+        car.mesh = vehicleMesh(kind, colors[i % 3], this.envMap);
+        car.mesh.visible = vis;
+        this.scene.add(car.mesh);
+        car.kind = kind; car.hl = t.len / 2 + 0.05; car.hw = t.wid / 2; car.ly = t.belt;
+      }
+      i++;
+    }
+    this.racerTop = top;
+  }
+
   // Поставить гонщиков в первый ряд у стоп-линии (stop — где она вдоль оси). Обычные машины с этих мест убираем.
   stageRacers(key, stop, skipLane = -1, banLane = -1) {
     const c = this.chains[key], placed = [];
@@ -229,7 +250,7 @@ export class Traffic {
       if (lane === undefined || placed.length >= (lanes > 2 ? 2 : 1)) break;
       taken.add(lane);
       car.key = key; car.chain = c; car.s = stop - car.hl - 0.8; car.lane = lane; car.nextLane = -1;
-      car.off = rowOffset(lane, at); car.v = 0; car.want = 48 + this.rnd() * 7; car.blinkSide = 0; car.latV = 0; car.prevLong = NaN; car.wait = 0; car.hold = 0; car.scare = 0;
+      car.off = rowOffset(lane, at); car.v = 0; car.want = this.racerTop * (0.93 + this.rnd() * 0.1); car.blinkSide = 0; car.latV = 0; car.prevLong = NaN; car.wait = 0; car.hold = 0; car.scare = 0;
       car.active = true; car.mesh.visible = true;
       placed.push(car);
       for (const o of this.cars) if (o !== car && o.active && !o.stalled && o.key === key && (o.lane === lane || Math.abs(o.off - car.off) < 2.7) && Math.abs(o.s - car.s) < 16) { o.active = false; o.mesh.visible = false; o.retry = 1; }

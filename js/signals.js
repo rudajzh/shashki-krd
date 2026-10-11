@@ -2,7 +2,7 @@
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
 // Один ряд перед каждой стоп-линией остаётся пустым (free): по нему игрок всегда может подъехать первым.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=19';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=20';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
 const CROSS_V = 13; // скорость машин на поперечной улице, м/с
@@ -151,6 +151,26 @@ export class Signals {
       return { dist: d, state: this.enabled ? it.g.state : 'g', left: this.enabled && u >= GREEN ? CYCLE - u : 0, stop: it.stop, g: it.g, free: it.free };
     }
     return null;
+  }
+  // «Зелёная волна» для старта со светофора: два следующих перекрёстка включат зелёный как раз к подъезду,
+  // чтобы гонка не кончалась через квартал на чужом красном. stop — откуда стартуем, delay — через сколько секунд.
+  wave(key, stop, delay) {
+    let n = 0;
+    for (const it of this.byChain[key]) {
+      if (it.stop <= stop + 5) continue;
+      if (n++ >= 2) break;
+      const T = delay + (it.stop - stop) / 30 - 1.5, now = (this.time + it.g.off) % CYCLE; // через сколько секунд там нужен зелёный
+      let u = ((-T % CYCLE) + CYCLE) % CYCLE;                      // какая фаза должна быть сейчас
+      if (u >= GREEN && u < GREEN + YELLOW) u = GREEN + YELLOW;     // жёлтый пропускаем
+      if (it.g.state === 'r' && u >= GREEN + YELLOW && u > now) continue; // идущий красный не укорачиваем: поперёк ещё едут
+      it.g.off += u - now;
+      const st = u < GREEN ? 'g' : 'r';
+      if (st !== it.g.state) {
+        it.g.state = st;
+        for (const k of ['north', 'south']) for (const j of this.byChain[k]) if (j.g === it.g) { j.free = st === 'g' ? -1 : this.pickFree(j); if (st === 'g') j.greenT = this.time; }
+      }
+    }
+    this.paint();
   }
   // сделать так, чтобы до зелёного на этом перекрёстке осталось ровно sec секунд (для стартового отсчёта)
   setLeft(g, sec) {
