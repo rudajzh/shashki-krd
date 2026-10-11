@@ -1,21 +1,21 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=20';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=20';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=20';
-import { makePlayerCar } from './playercar.js?v=20';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=20';
-import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=20';
-import { Traffic } from './traffic.js?v=20';
-import { Input } from './input.js?v=20';
-import { Sound } from './audio.js?v=20';
-import { Loop } from './loop.js?v=20';
-import { Smoke } from './smoke.js?v=20';
-import { Signals } from './signals.js?v=20';
-import { Rain } from './weather.js?v=20';
-import { Chase } from './chase.js?v=20';
-import { Streaks } from './streaks.js?v=20';
-import { SpeedBlur } from './post.js?v=20';
-import { Mirror } from './mirror.js?v=20';
+import { buildWorld } from './world.js?v=21';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=21';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=21';
+import { makePlayerCar } from './playercar.js?v=21';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=21';
+import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=21';
+import { Traffic } from './traffic.js?v=21';
+import { Input } from './input.js?v=21';
+import { Sound } from './audio.js?v=21';
+import { Loop } from './loop.js?v=21';
+import { Smoke } from './smoke.js?v=21';
+import { Signals } from './signals.js?v=21';
+import { Rain } from './weather.js?v=21';
+import { Chase } from './chase.js?v=21';
+import { Streaks } from './streaks.js?v=21';
+import { SpeedBlur } from './post.js?v=21';
+import { Mirror } from './mirror.js?v=21';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -64,7 +64,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=20')).json();
+const data = await (await fetch('data/krasnaya.json?v=21')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE, gelik: GELIK, lada: PRIORA, seven: CLASSIC };
@@ -134,6 +134,21 @@ function launchCurve(setup) {
   return (v) => table[Math.max(0, Math.min(60, Math.round(v)))] * 1.06; // чуть резвее игрока: без точного старта их не обойти
 }
 traffic.launchAcc = launchCurve(CARS[carId].setup);
+
+// На какой высоте держать камеру за машиной: ищем такую, с которой поверх крыши асфальт виден с нужного расстояния
+// перед носом (4,2 м на месте, 4,8 м на скорости, когда камера подъезжает ближе). У высокой машины камера ещё и дальше.
+const fits = {};
+function chaseFit(id, S) {
+  if (fits[id]) return fits[id];
+  const tall = Math.max(0, S.top(-0.3) - 1.47), d0 = 6.7 + tall * 2;
+  const seen = (dist, H) => { // с какого расстояния перед носом видна дорога
+    let D = 0;
+    for (let z = -S.len / 2; z <= S.len / 2; z += 0.05) { const t = S.top(z); if (t >= H - 0.05) return 99; D = Math.max(D, (dist + z) * H / (H - t)); }
+    return D - dist - S.len / 2;
+  };
+  const solve = (dist, want) => { let lo = 1.6, hi = 7; for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (seen(dist, m) > want) lo = m; else hi = m; } return hi; };
+  return (fits[id] = { tall, d0, h0: solve(d0, 4.2), h1: solve(d0 - 0.9, 4.8) });
+}
 
 // сменить машину: другая модель, другой характер и другой голос мотора
 const models = { [carId]: model }; // построенные машины: вторая примерка той же модели — мгновенная
@@ -581,12 +596,12 @@ function draw(dt) {
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
   let px, py, pz, lx, ly, lz, fovBase, fovGain, amp;
   if (view === 0) {
-    // камера стоит выше крыши и смотрит на дорогу далеко перед машиной: видно, что делается впереди
-    const tall = Math.max(0, model.spec.top(-0.3) - 1.47) * 2.3; // за высокой машиной камера стоит заметно выше, иначе за ней ничего не видно
-    // на слабых машинах камера на скорости садится ниже и ближе: асфальт бежит быстрее, а размывать картинку не нужно
-    const dist = 6.7 + tall * 0.9 - (0.9 + low * 1.0) * spd + G.push * 0.08 + G.lift * 3.5, height = 2.6 + tall - (0.3 + low * 0.55) * spd + G.lift * 4.5;
+    // Камера стоит выше крыши и смотрит на дорогу далеко перед машиной. Высота подобрана под каждый кузов так,
+    // чтобы поверх своей крыши асфальт был виден уже в четырёх-пяти метрах перед носом — машину впереди видно целиком.
+    const fit = chaseFit(carId, model.spec);
+    const dist = fit.d0 - 0.9 * spd + G.push * 0.08 + G.lift * 3.5, height = fit.h0 + (fit.h1 - fit.h0) * spd + G.lift * 4.5, tall = fit.tall;
     px = car.x - cx * dist; pz = car.z - cz * dist; py = height;
-    lx = car.x + cx * 17; ly = 0.5 + tall * 0.25; lz = car.z + cz * 17;
+    lx = car.x + cx * 17; ly = 0.5 + tall * 0.6; lz = car.z + cz * 17;
     fovBase = 60; fovGain = 24; amp = 0.016;
   } else if (view === 1) {
     const [h, f] = model.spec.hoodCam;
