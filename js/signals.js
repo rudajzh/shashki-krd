@@ -2,7 +2,7 @@
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
 // Один ряд перед каждой стоп-линией остаётся пустым (free): по нему игрок всегда может подъехать первым.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=16';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=17';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
 const CROSS_V = 13; // скорость машин на поперечной улице, м/с
@@ -124,6 +124,11 @@ export class Signals {
     this.geo.attributes.color.needsUpdate = true;
   }
 
+  // ближайший перекрёсток впереди, даже когда светофоры выключены (нужен тем, кто собирается свернуть)
+  peek(key, front) {
+    for (const it of this.byChain[key]) { const d = it.stop - front; if (d < -1.5) continue; return d > 230 ? null : it; }
+    return null;
+  }
   // ближайшая стоп-линия впереди машины потока (front — где её передний бампер); дальше 230 м не смотрим
   next(key, front) {
     if (!this.enabled) return null;

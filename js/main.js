@@ -1,18 +1,19 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=16';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=16';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=16';
-import { makePlayerCar } from './playercar.js?v=16';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=16';
-import { Traffic } from './traffic.js?v=16';
-import { Input } from './input.js?v=16';
-import { Sound } from './audio.js?v=16';
-import { Loop } from './loop.js?v=16';
-import { Smoke } from './smoke.js?v=16';
-import { Signals } from './signals.js?v=16';
-import { Rain } from './weather.js?v=16';
-import { Chase } from './chase.js?v=16';
-import { Streaks } from './streaks.js?v=16';
+import { buildWorld } from './world.js?v=17';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=17';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=17';
+import { makePlayerCar } from './playercar.js?v=17';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=17';
+import { Traffic } from './traffic.js?v=17';
+import { Input } from './input.js?v=17';
+import { Sound } from './audio.js?v=17';
+import { Loop } from './loop.js?v=17';
+import { Smoke } from './smoke.js?v=17';
+import { Signals } from './signals.js?v=17';
+import { Rain } from './weather.js?v=17';
+import { Chase } from './chase.js?v=17';
+import { Streaks } from './streaks.js?v=17';
+import { SpeedBlur } from './post.js?v=17';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -28,6 +29,7 @@ const store = {
 const canvas = $('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+const blur = new SpeedBlur(renderer);
 const scene = new THREE.Scene();
 // ночное небо: тёмный верх, у горизонта — зарево города
 {
@@ -51,6 +53,7 @@ const camera = new THREE.PerspectiveCamera(62, 1, 0.6, 1500);
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
+  blur.setSize(w, h, renderer.getPixelRatio());
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -58,7 +61,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=16')).json();
+const data = await (await fetch('data/krasnaya.json?v=17')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE };
@@ -72,6 +75,8 @@ let model = makePlayerCar(color, world.glowTex, envMap, SPECS[carId]); // дет
 scene.add(model.root);
 const traffic = new Traffic(scene, world.chains, world.glowTex, world.poolTex, envMap);
 const loop = new Loop(world, data);
+// перед разворотами крайний ряд свободен: у «Авроры» заходим через левый, у театра — от правого бордюра
+traffic.clearRows = [{ key: 'north', s0: loop.linkS - 330, s1: loop.linkS + 40, side: 1 }, { key: 'south', s0: loop.southS - 300, s1: loop.southS + 20, side: -1 }];
 const smoke = new Smoke(scene);
 const streaks = new Streaks(scene);
 const signals = new Signals(scene, world, world.glowTex, envMap);
@@ -118,7 +123,7 @@ const G = {
   state: 'menu', // menu | drive | crash | finish
   score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0, lap: 1, grace: 0, turns: 0, blend: 1,
   launch: { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g', cine: 0, cineOn: false, mix: 0, rivals: [], winAt: 0, line: null },
-  routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9, flashT: 0,
+  routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9, flashT: 0, push: 0, bank: 0, wheelTurn: 0, view: 0,
 };
 const inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, launch: false };
 const idle = { steer: 0, throttle: 0, brake: 0, handbrake: true };
@@ -132,7 +137,7 @@ function placeAtStart() {
   G.routeI = -1; rp.i = -1;
   loop.active = null;
   traffic.density = densityFor(1);
-  traffic.reset(car);
+  traffic.reset(car, { key: 'north', s0: pk.s - 25, s1: pk.s + 135 }); // там, куда машина сейчас выедет с площадки, пусто
   traffic.setStalled('north', []); traffic.setStalled('south', []);
   Object.assign(G.launch, { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g', cine: 0, cineOn: false, mix: 0, rivals: [], winAt: 0, line: null, jump: false, rev: false, align: null });
   $('launchBtn').hidden = true; $('launchTip').hidden = true; $('lights').hidden = true;
@@ -174,6 +179,7 @@ const densityFor = (lap) => Math.min(1, 0.8 + 0.1 * (lap - 1));
 
 function startRun() {
   goFullscreen();
+  if (input.mode === 'tilt') input.setMode('tilt'); // разрешение на датчик наклона дают только по нажатию
   placeAtStart();
   Object.assign(G, { state: 'drive', score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0, shake: 0, lap: START_LAP, grace: 0, turns: (START_LAP - 1) * 2, blend: 0, why: '' });
   traffic.density = densityFor(G.lap);
@@ -251,12 +257,12 @@ function tick(dt) {
     // разворот: машину ведёт игра, поток расступается, игрок нажатиями держит занос
     const a = loop.active;
     if (a.fresh) {
-      if (a.center) traffic.clearNear(a.center[0], a.center[1], 62); else traffic.clearNear(car.x, car.z, a.auto ? 30 : 70);
       traffic.hold(...a.hold);
+      traffic.gates = a.gates || []; // машины не исчезают: поток сам пропускает игрока
       $('drift').hidden = !!a.auto;
     }
     loop.feed(inp.throttle > 0, dt); // занос держится, пока нажат газ
-    traffic.clearNear(car.x, car.z, 22);
+    traffic.clearNear(car.x, car.z, 4.5); // страховка: только если кто-то оказался прямо в машине
     if (!a.auto) { G.score += a.power * 260 * dt * G.lap; $('driftBar').style.width = Math.round(a.power * 100) + '%'; }
     const done = loop.update(dt, car);
     G.grace = 1.2;
@@ -427,10 +433,10 @@ function launchControl(dt) {
 // поправка к направлению и середине полосы. Работает только на проезжей части Красной.
 function roadAssist() {
   if (car.speed < 9) return null;
-  let best = null;
+  let best = null, chain = null;
   for (const key of ['north', 'south']) {
     const p = traffic.proj[key];
-    if (p.d < halfWidth(p.lf) + 2 && (!best || p.d < best.d)) best = p;
+    if (p.d < halfWidth(p.lf) + 2 && (!best || p.d < best.d)) { best = p; chain = world.chains[key]; }
   }
   if (!best) return null;
   const along = Math.sin(car.yaw) * best.dx + Math.cos(car.yaw) * best.dz >= 0 ? 1 : -1;
@@ -440,15 +446,23 @@ function roadAssist() {
   const yaw = Math.atan2(best.dx, best.dz) + (along > 0 ? aim : Math.PI - aim);
   const d = Math.atan2(Math.sin(yaw - car.yaw), Math.cos(yaw - car.yaw));
   if (Math.abs(d) > 0.6) return null;
-  const wheelbase = car.s.a + car.s.b;
-  return { bend: wheelbase * best.kappa * along / steerLockAt(Math.abs(car.u), car.s), pull: alignSteer(car, yaw) };
+  // Изгиб берём не под колёсами, а средний на ближайшую секунду пути: на коротком S-образном изгибе (как в конце
+  // бульвара у Будённого) машина иначе доворачивала поздно и слишком резко — и уезжала в бордюр.
+  let k = 0, n = 0;
+  for (let d = 0, win = Math.max(18, car.speed * 1.0); d <= win; d += 6) {
+    const s = best.s + along * d;
+    if (s < 1 || s > chain.total - 1) break;
+    k += chain.kappa[chain.segAt(s)]; n++;
+  }
+  const wheelbase = car.s.a + car.s.b, bend = wheelbase * (n ? k / n : best.kappa) * along / steerLockAt(Math.abs(car.u), car.s);
+  return { bend: Math.max(-0.35, Math.min(0.35, bend * 0.85)), pull: alignSteer(car, yaw) };
 }
 
 // Разворот пройден: премия (за удержанный занос — больше). С каждым разворотом дорога сложнее:
 // появляются сломанные машины, после полного круга — погоня.
 function turnDone(res) {
   traffic.release();
-  traffic.clearNear(car.x, car.z, 30); // на выходе никто не должен стоять вплотную
+  traffic.gates = [];
   G.grace = 1.5;
   $('drift').hidden = true;
   G.handsOff = 9;
@@ -495,25 +509,61 @@ function draw(dt) {
   model.setFlash(G.flashT > 0.27 || (G.flashT > 0.03 && G.flashT < 0.17) ? 1 : 0);
   model.setBrake(G.state !== 'drive' ? true : loop.active ? loop.active.v > loop.active.speedAt(loop.active.s) + 1 : inp.brake > 0 || inp.handbrake);
 
-  // камера за машиной: поворачивается с запаздыванием, чтобы занос был виден
+  // ---------- камера ----------
+  // Три вида: сзади, с капота и из-за руля. Во всех — одни и те же приёмы, которые дают ощущение скорости:
+  // обзор раскрывается, камера прижимается к машине и к асфальту, на разгоне её «оттягивает» назад,
+  // на торможении бросает вперёд, на скорости она мелко дрожит и кренится в повороты.
   let d = (loop.active ? loop.active.yaw : car.yaw) - G.camYaw; // в заносе камера идёт по траектории, кузов поворачивается на глазах
   d = Math.atan2(Math.sin(d), Math.cos(d));
   G.camYaw += d * Math.min(1, dt * 5.5);
   const cx = Math.sin(G.camYaw), cz = Math.cos(G.camYaw);
   // после аварии камера отъезжает вверх, чтобы не оказаться внутри чужой машины
   G.lift += ((G.state === 'crash' ? 1 : 0) - G.lift) * Math.min(1, dt * 3);
-  // с ростом скорости камера чуть отъезжает и опускается к асфальту: дорога «бежит» под машину быстрее
-  const dist = 6.0 + Math.min(1.9, v * 0.028) + G.lift * 3.5, height = 1.95 - Math.min(0.32, v * 0.008) + G.lift * 4.5;
+  const driving = G.state === 'drive', spd = 1 - Math.exp(-v / 16);
+  G.push += ((driving && !loop.active ? Math.max(-12, Math.min(9, car.ax)) : 0) - G.push) * Math.min(1, dt * 3.2); // тяга и торможение, сглаженные
+  G.bank += ((driving ? Math.max(-0.05, Math.min(0.05, -car.ay * 0.0028)) : 0) - G.bank) * Math.min(1, dt * 4);
   G.shake *= Math.exp(-dt * 4);
-  const sh = G.shake + Math.max(0, v - 22) * 0.0011;
-  // В меню камера медленно обходит машину спереди; на старте плавно перелетает за неё.
-  const now = performance.now() / 1000, oa = car.yaw + 0.75 + Math.sin(now * 0.25) * 0.35;
+  const now = performance.now() / 1000, sk = Math.min(1, v / 52) ** 2;
+  const jx = (Math.sin(now * 31.7) + Math.sin(now * 47.3 + 1.3)) * 0.5, jy = (Math.sin(now * 39.1 + 0.7) + Math.sin(now * 57.9)) * 0.5; // дрожь — плавная, а не случайный шум
+  // В меню камера медленно обходит машину спереди; на старте плавно перелетает на своё место.
+  const oa = car.yaw + 0.75 + Math.sin(now * 0.25) * 0.35;
   const mx = car.x + Math.sin(oa) * 7.2, mz = car.z + Math.cos(oa) * 7.2, my = 1.5;
-  if (G.state === 'drive' && G.blend < 1) G.blend = Math.min(1, G.blend + dt / 2.6);
+  if (driving && G.blend < 1) G.blend = Math.min(1, G.blend + dt / 2.6);
   const bl = G.state === 'menu' ? 0 : G.blend * G.blend * (3 - 2 * G.blend);
-  const px = car.x - cx * dist, pz = car.z - cz * dist;
-  camera.position.set(mx + (px - mx) * bl + (Math.random() - 0.5) * sh, my + (height - my) * bl + (Math.random() - 0.5) * sh, mz + (pz - mz) * bl + (Math.random() - 0.5) * sh);
-  camera.lookAt(car.x + cx * 8 * bl, 0.8 + 0.2 * bl, car.z + cz * 8 * bl);
+  const view = G.state === 'crash' || G.state === 'busted' ? 0 : G.view; // после аварии смотрим со стороны
+  const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
+  let px, py, pz, lx, ly, lz, fovBase, fovGain, amp;
+  if (view === 0) {
+    const dist = 6.3 - 1.5 * spd + G.push * 0.11 + G.lift * 3.5, height = 1.95 - 0.5 * spd + G.lift * 4.5;
+    px = car.x - cx * dist; pz = car.z - cz * dist; py = height;
+    lx = car.x + cx * 8; ly = 1.0; lz = car.z + cz * 8;
+    fovBase = 60; fovGain = 31; amp = 0.045;
+  } else if (view === 1) {
+    const [h, f] = model.spec.hoodCam;
+    px = car.x + fx * (f - G.push * 0.012); pz = car.z + fz * (f - G.push * 0.012); py = h - 0.06 * spd;
+    lx = car.x + fx * 40; ly = 0.7; lz = car.z + fz * 40;
+    fovBase = 66; fovGain = 24; amp = 0.018;
+  } else {
+    const [ex, ey, ez] = model.interior.eye, back = G.push * 0.006; // на разгоне вжимает в кресло
+    px = car.x + fz * ex + fx * (ez - back); pz = car.z - fx * ex + fz * (ez - back); py = ey;
+    const look = car.yaw + car.steer * 0.35; // взгляд чуть уходит в сторону поворота
+    lx = px + Math.sin(look) * 30; ly = ey - 1.2; lz = pz + Math.cos(look) * 30;
+    fovBase = 68; fovGain = 20; amp = 0.01;
+  }
+  const a = G.shake + sk * amp, rx = cz, rz = -cx; // дрожь — вбок и вверх-вниз
+  px += rx * jx * a + (Math.random() - 0.5) * G.shake; py += jy * a * 0.7 + (Math.random() - 0.5) * G.shake; pz += rz * jx * a + (Math.random() - 0.5) * G.shake;
+  camera.position.set(mx + (px - mx) * bl, my + (py - my) * bl, mz + (pz - mz) * bl);
+  camera.lookAt(car.x + (lx - car.x) * bl, 0.8 + (ly - 0.8) * bl, car.z + (lz - car.z) * bl);
+  camera.rotateZ((G.bank + jx * sk * 0.004 + (view ? G.roll * 0.6 : 0)) * bl);
+  // салон виден только изнутри; из-за руля ближняя граница обзора ближе, иначе руль и приборы обрежет
+  const inside = view === 2 && bl > 0.97 && G.launch.mix < 0.03 && !G.freeCam;
+  if (model.interior.group.visible !== inside) model.interior.group.visible = inside;
+  const near = view !== 0 && bl > 0.97 && !G.freeCam ? 0.12 : 0.6;
+  if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
+  if (inside) {
+    G.wheelTurn += (-car.steer / Math.max(0.02, steerLockAt(Math.abs(car.u), car.s)) * 1.5 - G.wheelTurn) * Math.min(1, dt * 12);
+    model.interior.update(Math.abs(car.u) * 3.6, car.rpm, car.reverse && car.u < 0.6 ? 'R' : car.gear, G.wheelTurn);
+  }
   // Пролёт перед стартом: камера идёт низко вдоль стоп-линии, слева направо, лицом к машинам —
   // видно, кто стоит рядом. К последней секунде она возвращается за машину игрока.
   if (G.launch.mix > 0.002 && G.launch.line) {
@@ -526,9 +576,9 @@ function draw(dt) {
     camera.lookAt(chaseLook[0] + (tx - chaseLook[0]) * m, chaseLook[1] + (0.75 - chaseLook[1]) * m, chaseLook[2] + (tz - chaseLook[2]) * m);
   }
   if (G.freeCam) { const f = G.freeCam; camera.position.set(f[0], f[1], f[2]); camera.lookAt(f[3], f[4], f[5]); } // отладка: свободная камера
-  // угол обзора быстро раскрывается до ~100 км/ч и дальше растёт плавно — скорость чувствуется раньше
-  const fov = 60 + 27 * (1 - Math.exp(-v / 19));
-  if (Math.abs(fov - camera.fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 4); camera.updateProjectionMatrix(); }
+  // угол обзора раскрывается уже к 60–80 км/ч и дополнительно «дышит» на разгоне и торможении
+  const fov = fovBase + fovGain * spd + G.push * 0.55;
+  if (Math.abs(fov - camera.fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 5); camera.updateProjectionMatrix(); }
   $('vig').style.opacity = G.state === 'drive' ? Math.max(0, Math.min(1, (v - 18) / 45)).toFixed(2) : '0';
 
   if (G.state === 'drive') {
@@ -538,6 +588,10 @@ function draw(dt) {
     $('combo').textContent = '×' + G.combo;
     $('comboBox').classList.toggle('live', G.combo > 1);
     $('lapLabel').textContent = `Круг ${G.lap} · до разворота`;
+    // за 400 м до разворота подсказываем, в какой ряд встать
+    const tip = $('turnTip'), near = !loop.active && (G.left ?? 999) < 400 && (G.left ?? 0) > 25;
+    if (near !== !tip.hidden) tip.hidden = !near;
+    if (near) tip.textContent = traffic.only === 'north' ? '← Разворот: в левый ряд' : 'Разворот: в правый ряд →';
     const left = G.left ?? 0;
     $('left').textContent = left >= 1000 ? (left / 1000).toFixed(1).replace('.', ',') + ' км' : Math.round(left / 10) * 10 + ' м';
   }
@@ -552,7 +606,7 @@ function draw(dt) {
   $('cops').style.opacity = chase.active && G.state === 'drive' && chase.gap < 90 ? (0.55 * (1 - chase.gap / 90) * (Math.floor(chase.flash * 5) % 2 ? 1 : 0.35)).toFixed(2) : '0';
   $('cops').classList.toggle('blue', Math.floor(chase.flash * 5) % 2 === 0);
   sound.update(car.rpm, G.state === 'drive' ? (G.launch.rev ? 1 : inp.throttle) : 0, car.slip, v, G.state === 'drive', car.gear);
-  renderer.render(scene, camera);
+  blur.render(scene, camera, driving && !G.freeCam ? Math.min(1, Math.max(0, (v - 9) / 38) + Math.max(0, G.push) * 0.035) : 0, dt);
 }
 
 let last = performance.now(), clockAt = 0;
@@ -577,6 +631,10 @@ COLORS.forEach((c) => {
   });
   sw.append(b);
 });
+// вид: сзади → с капота → из-за руля
+function nextView() { G.view = (G.view + 1) % 3; store.set('view', G.view); }
+G.view = store.get('view', 0) % 3;
+$('viewBtn').addEventListener('click', nextView);
 const paintCar = () => { $('carName').textContent = CARS[carId].name; };
 for (const [id, step] of [['carPrev', -1], ['carNext', 1]]) $(id).addEventListener('click', () => {
   const ids = Object.keys(CARS);
@@ -584,6 +642,12 @@ for (const [id, step] of [['carPrev', -1], ['carNext', 1]]) $(id).addEventListen
   paintCar();
 });
 paintCar();
+// способ рулить на экране телефона: стрелки, руль или наклон
+const paintCtl = () => { for (const b of $('ctlSeg').children) b.classList.toggle('sel', b.dataset.m === input.mode); };
+for (const b of $('ctlSeg').children) b.addEventListener('click', () => { input.setMode(b.dataset.m); store.set('ctl', input.mode); paintCtl(); });
+input.setMode(store.get('ctl', 'arrows'));
+$('ctlSeg').hidden = !coarse;
+paintCtl();
 const paintLights = () => { $('lightsBtn').textContent = lightsOn ? 'Светофоры: включены' : 'Светофоры: выключены'; $('lightsBtn').classList.toggle('off', !lightsOn); };
 $('lightsBtn').addEventListener('click', () => { lightsOn = !lightsOn; store.set('lights', lightsOn); paintLights(); });
 paintLights();
@@ -593,6 +657,7 @@ $('toMenu').addEventListener('click', showMenu);
 $('mute').addEventListener('click', () => { sound.setMuted(!sound.muted); $('mute').textContent = sound.muted ? '🔇' : '🔊'; });
 addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && G.state !== 'menu') startRun();
+  if (e.code === 'KeyC' || e.code === 'KeyV') nextView();
   if (e.code === 'Enter' && G.state !== 'drive') startRun();
 });
 addEventListener('contextmenu', (e) => e.preventDefault());

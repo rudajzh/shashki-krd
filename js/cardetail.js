@@ -230,6 +230,7 @@ function sportDetails(S, P, paint, ends) {
 // 4,97 × 1,90 × 1,47 м, колёсная база 2,98 м. Ось z — вперёд, x — влево.
 export const SEDAN = {
   len: 4.97, wid: 1.9, wheel: 0.36, tyreW: 0.285, track: 0.812, axF: 1.6, axR: -1.38, blackRoof: true, belt: 0.9,
+  eye: [0.38, 1.19, -0.16], hoodCam: [1.3, 0.92], // глаза водителя и точка на капоте: [высота, сколько вперёд]
   top: curve([[-2.485, 0.93], [-2.44, 1.04], [-2.3, 1.062], [-2.05, 1.082], [-1.92, 1.11], [-1.5, 1.32], [-1.1, 1.432], [-0.6, 1.468], [-0.1, 1.462], [0.3, 1.42], [0.62, 1.25], [1.0, 1.015], [1.25, 0.975], [1.8, 0.915], [2.25, 0.83], [2.42, 0.77], [2.485, 0.69]]),
   sw: curve([[-2.485, 0.8], [-2.4, 0.885], [-2.1, 0.935], [-1.5, 0.95], [0, 0.95], [1.4, 0.95], [2.0, 0.935], [2.34, 0.885], [2.485, 0.78]]),
   sy: curve([[-2.485, 0.86], [-2.3, 0.975], [-1.7, 0.995], [-0.5, 0.96], [0.9, 0.915], [1.6, 0.855], [2.3, 0.76], [2.485, 0.65]]),
@@ -297,6 +298,7 @@ export const COUPE = {
   by: curve([[-2.215, 0.26], [-2.0, 0.2], [-1.7, 0.13], [1.7, 0.12], [2.05, 0.12], [2.215, 0.16]]),
   cabin: [-1.7, 0.85], roof: [-0.5, 0.28], pillarB: [-0.5, -0.4], kink: -0.95, doors: [0.66, -0.44, -0.44],
   headWrap: 0.26, tailWrap: 0.1,
+  eye: [0.38, 1.0, -0.24], hoodCam: [1.09, 0.78],
   details: coupeDetails,
 };
 
@@ -396,7 +398,7 @@ export function buildCar({ spec = SEDAN, color = 0x15171a, envMap = null } = {})
     wheels.push({ pivot, mesh, front: z > 0, side: s });
     tris += wg.attributes.position.count / 3;
   }
-  return { root, chassis, wheels, mats, tris, type: { len: spec.len + 0.1, wid: spec.wid, wheel: spec.wheel, belt: spec.belt, tailY: spec.tailY ?? 0.875, tailX: spec.tailX ?? 0.6 } };
+  return { root, chassis, wheels, mats, tris, spec, type: { len: spec.len + 0.1, wid: spec.wid, wheel: spec.wheel, belt: spec.belt, tailY: spec.tailY ?? 0.875, tailX: spec.tailX ?? 0.6 } };
 }
 
 // Машина потока: всё одним куском с цветами в вершинах (один вызов отрисовки), колёса не крутятся.

@@ -1,6 +1,7 @@
 // Машина игрока: детальная модель + её свет (габариты, стоп-сигналы, конус фар на асфальте, прожектор).
 import * as THREE from 'three';
-import { buildCar } from './cardetail.js?v=16';
+import { buildCar } from './cardetail.js?v=17';
+import { buildInterior } from './interior.js?v=17';
 
 // конус света на асфальте: начинается у бампера, расширяется и гаснет вдаль
 function beamTexture() {
@@ -55,8 +56,11 @@ export function makePlayerCar(color, glowTex, envMap, spec) {
   lamp.target.position.set(0, 0.2, 45);
   root.add(lamp, lamp.target);
 
+  const interior = buildInterior(car.spec);
+  car.chassis.add(interior.group);
   return {
     ...car,
+    interior,
     setColor(c) { car.mats.paint.color.setHex(c); },
     setBrake(on) { tailMat.color.setHex(on ? 0xff2412 : 0xc01008); for (const sp of tails) sp.scale.setScalar(on ? 2.0 : 1.0); },
     // ближний горит всегда; моргание — вспышка дальнего: луч бьёт дальше и ярче, но только вперёд

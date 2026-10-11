@@ -2,8 +2,8 @@
 // и витринами, бульвар, фонари с пятнами света, светофоры, ограждения боковых улиц.
 // Отдаёт проверки столкновений: со зданиями (hitsSolid) и с бордюром (offRoad).
 import * as THREE from 'three';
-import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=16';
-import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=16';
+import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=17';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=17';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -306,6 +306,29 @@ export function buildWorld(data, scene) {
     const half = (i) => halfWidth(lf[i]);
     ribbon(rm, p, half, 0.05, asphalt);
     const skip = (x, z) => inCrossing(key, x, z, 1);
+    // Гладкий одноцветный асфальт не даёт глазу зацепиться — скорость не чувствуется. Добавляем то, что есть
+    // на любой дороге: поперечные швы, заплаты посветлее и потемнее, люки. Всё это мелькает под машиной.
+    {
+      let sd = key === 'north' ? 77 : 177;
+      const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+      const seam = asphalt.clone().multiplyScalar(0.62), light = asphalt.clone().multiplyScalar(1.22), darkP = asphalt.clone().multiplyScalar(0.8);
+      const quadAt = (s0, s1, l0, l1, col, y) => { // прямоугольник: вдоль от s0 до s1, поперёк от l0 до l1 (влево от оси)
+        ch.at(s0, o); const a = [o.x + o.dz * l0, o.z - o.dx * l0], b = [o.x + o.dz * l1, o.z - o.dx * l1];
+        ch.at(s1, o); mm.flatQuad(a, b, [o.x + o.dz * l1, o.z - o.dx * l1], [o.x + o.dz * l0, o.z - o.dx * l0], y, col);
+      };
+      for (let s = 6; s < ch.total - 8; s += 9) {
+        ch.at(s, o);
+        if (skip(o.x, o.z)) continue;
+        const lanesHere = Math.max(1, Math.round(o.lf)), w = o.lf / 2 * LANE_W;
+        for (let j = 0; j < lanesHere; j++) {
+          const l1 = w - j * LANE_W - 0.2, l0 = w - (j + 1) * LANE_W + 0.2;
+          quadAt(s + (j % 2) * 1.5, s + (j % 2) * 1.5 + 0.1, l0, l1, seam, 0.066);                        // шов поперёк ряда
+          const r = rr();
+          if (r < 0.2) quadAt(s + 2, s + 4 + rr() * 3.5, l0 + 0.15 + rr() * 0.5, l1 - 0.15 - rr() * 0.5, r < 0.1 ? light : darkP, 0.064); // заплата
+          else if (r < 0.26) { const m = (l0 + l1) / 2 + (rr() - 0.5) * 1.6; ch.at(s + 5, o); disc(mm, o.x + o.dz * m, o.z - o.dx * m, 0.36, 0.066, seam); } // люк
+        }
+      }
+    }
     // линии между полосами: j-я линия есть там, где правее неё помещается хотя бы полполосы
     // Линия m отделяет ряд m от ряда m + 1 (см. нумерацию рядов в chain.js): карман слева добавляет линию 0
     // и не сдвигает остальные — они идут прямо.

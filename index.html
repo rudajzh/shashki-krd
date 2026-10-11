@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=17">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -27,24 +27,38 @@
   </div>
   <div class="chips"><div class="chip" id="chase" hidden>ПОГОНЯ · <b id="chaseGap">0 м</b></div><div class="chip rain" id="rain" hidden>Дождь · скользко</div></div>
   <div id="pop"></div>
+  <div class="tip turn" id="turnTip" hidden>← Разворот: в левый ряд</div>
   <div class="tip" id="launchTip" hidden>Ты первый! Зажми газ и ЛАНЧ (Shift)</div>
   <div id="lights" hidden><i></i><i></i><i></i><i></i><i></i><b id="lightsText">ДЕРЖИ…</b></div>
   <div class="speed"><b id="speed">0</b><span>км/ч</span><i id="gear">1</i></div>
   <div class="hint" id="rotate">Поверните телефон горизонтально</div>
 </div>
 
-<div id="touch" hidden>
+<div id="touch" hidden data-mode="arrows">
   <div class="pad left">
     <button data-ctl="launch" id="launchBtn" class="launch" aria-label="Ланч" hidden>ЛАНЧ</button>
-    <button data-ctl="flash" class="flash" aria-label="Моргнуть фарами">Моргнуть</button>
-    <div class="row">
-      <button data-ctl="left" aria-label="Влево">◀</button>
-      <button data-ctl="right" aria-label="Вправо">▶</button>
+    <!-- подрулевой «лепесток»: потянул — моргнул дальним -->
+    <button data-ctl="flash" class="stalk" aria-label="Моргнуть фарами">
+      <svg viewBox="0 0 120 44" width="120" height="44"><defs><linearGradient id="stk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a5058"/><stop offset="1" stop-color="#1b1e22"/></linearGradient></defs>
+        <rect x="2" y="15" width="92" height="14" rx="7" fill="url(#stk)" stroke="#6b737d" stroke-width="1.2"/>
+        <rect x="82" y="7" width="34" height="30" rx="9" fill="url(#stk)" stroke="#8a929c" stroke-width="1.4"/>
+        <path d="M95 15h6a7 7 0 0 1 0 14h-6z" fill="none" stroke="#dfe9ff" stroke-width="1.8"/><path d="M84 17h7M84 22h7M84 27h7" stroke="#dfe9ff" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+    <div class="steer arrows">
+      <button data-ctl="left" aria-label="Влево"><svg viewBox="0 0 24 24" width="34" height="34"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button data-ctl="right" aria-label="Вправо"><svg viewBox="0 0 24 24" width="34" height="34"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
+    <div class="steer wheel" id="wheelPad" aria-label="Руль">
+      <svg id="wheelArt" viewBox="0 0 160 160" width="150" height="150"><defs><radialGradient id="rimG" cx="0.5" cy="0.4" r="0.6"><stop offset="0" stop-color="#3a3f46"/><stop offset="1" stop-color="#14161a"/></radialGradient></defs>
+        <circle cx="80" cy="80" r="66" fill="none" stroke="url(#rimG)" stroke-width="17"/><circle cx="80" cy="80" r="74" fill="none" stroke="#5d646d" stroke-width="1.2"/>
+        <path d="M80 80L22 62M80 80l58-18M80 80v62" stroke="#24272c" stroke-width="15" stroke-linecap="round"/>
+        <circle cx="80" cy="80" r="21" fill="#1b1e22" stroke="#5d646d" stroke-width="1.5"/><rect x="77" y="8" width="6" height="14" rx="2" fill="#e5532a"/></svg>
+    </div>
+    <div class="steer tilt">Наклоняй телефон</div>
   </div>
   <div class="pad right">
-    <button data-ctl="brake" class="brake" aria-label="Тормоз">Тормоз</button>
-    <button data-ctl="gas" class="gas" aria-label="Газ">Газ</button>
+    <button data-ctl="brake" class="pedal brake" aria-label="Тормоз"><i></i></button>
+    <button data-ctl="gas" class="pedal gas" aria-label="Газ"><i></i></button>
   </div>
 </div>
 
@@ -62,12 +76,13 @@
     <div class="carpick"><button id="carPrev" aria-label="Предыдущая машина">‹</button><b id="carName">Седан</b><button id="carNext" aria-label="Следующая машина">›</button></div>
     <div class="swatches" id="swatches"></div>
     <button id="lightsBtn" class="ghost toggle">Светофоры: включены</button>
+    <div class="seg" id="ctlSeg" hidden><button data-m="arrows">Стрелки</button><button data-m="wheel">Руль</button><button data-m="tilt">Наклон</button></div>
     <button id="go" class="primary">Поехали</button>
     <p class="keys">«Моргнуть» (пробел) — машина впереди уступит полосу</p>
     <p class="best" id="best"></p>
     <a class="ghostlink" href="car.html">Посмотреть машину вблизи</a>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.16</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.17</p>
   </div>
 </div>
 
@@ -86,6 +101,9 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=16"></script>
+<button id="viewBtn" aria-label="Сменить вид" title="Вид (C)">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l1.5-2h9L18 8h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
+</button>
+<script type="module" src="js/main.js?v=17"></script>
 </body>
 </html>

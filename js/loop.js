@@ -1,7 +1,7 @@
 // Кольцо: у «Авроры» машина уходит налево на Офицерскую, огибает кинотеатр и встаёт на встречную полосу,
 // на юге — разворачивается на месте перед гостиницей. Пока идёт разворот, по пути машину ведёт игра,
 // а игрок быстрыми нажатиями держит занос: не нажимает — машина просто спокойно поворачивает.
-import { laneOffset, halfWidth } from './chain.js?v=16';
+import { laneOffset, halfWidth } from './chain.js?v=17';
 
 const CAP = 26, BRAKE = 13, ALAT = 20; // потолок скорости на развороте, торможение и боковое ускорение, под которое подбирается скорость в дуге
 
@@ -76,6 +76,7 @@ export class Loop {
       ctrl.push(B, this.lanePoint(this.S, 64, 1), this.lanePoint(this.S, 92, 1));
       this.begin('north', spline(ctrl), car, 9, 0.5);
       this.active.hold = ['south', 0, 660, 100];
+      this.active.gates = [];
     } else if (onS && s.s < this.southS + 4) {
       const need = Math.max(46, (v * v - 100) / (2 * BRAKE) + 28);
       if (this.southS - s.s > need) return;
@@ -92,6 +93,8 @@ export class Loop {
       this.begin('south', spline([here, ahead, ...pre, a, ...arc, b, this.lanePoint(this.N, sN + 18, 0, 0.6), this.lanePoint(this.N, sN + 40, 0), this.lanePoint(this.N, sN + 68, 0)]), car, 4.6, 0.85);
       this.active.hold = ['north', sN - 160, sN + 660, sN + 85];
       this.active.center = c;
+      // машины позади на своей стороне и те, что подъезжают по встречной, пропускают разворачивающегося
+      this.active.gates = [{ key: 'south', s: s.s - 6 }, { key: 'north', s: sN - 12 }];
     }
   }
 
@@ -132,6 +135,7 @@ export class Loop {
     this.begin('intro', spline(ctrl), car, 4.2, 0.42);
     this.active.auto = true; // занос сам, нажимать не нужно
     this.active.hold = ['north', pk.s - 120, pk.s + 640, pk.s + 150];
+    this.active.gates = [{ key: 'north', s: pk.s + 2 }]; // поток пропускает выезжающего с площадки
   }
 
   // игрок держит газ — занос держится (как в жизни: в дрифте газ открыт)

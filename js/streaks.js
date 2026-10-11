@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 export class Streaks {
-  constructor(scene, count = 80) {
+  constructor(scene, count = 130) {
     // штрих — две скрещённые узкие полоски длиной 1 м вдоль оси z: видно и сбоку, и сверху
     const w = 0.018, pos = [];
     for (const [ax, ay] of [[w, 0], [0, w]]) pos.push(-ax, -ay, 0, ax, ay, 0, ax, ay, 1, -ax, -ay, 0, ax, ay, 1, -ax, -ay, 1);
@@ -22,10 +22,10 @@ export class Streaks {
 
   // cam — где камера, yaw — куда едем, v — скорость, м/с
   update(cam, yaw, v) {
-    const k = Math.max(0, Math.min(1, (v - 15) / 32));
+    const k = Math.max(0, Math.min(1, (v - 8) / 26));
     this.mesh.visible = k > 0.02;
     if (!this.mesh.visible) { this.fresh = true; return; }
-    this.mat.opacity = 0.42 * k;
+    this.mat.opacity = 0.5 * k;
     const fx = Math.sin(yaw), fz = Math.cos(yaw), len = 0.4 + v * 0.06, n = this.p.length / 3;
     this.q.setFromAxisAngle(this.up, yaw);
     for (let i = 0; i < n; i++) {
@@ -33,7 +33,7 @@ export class Streaks {
       const rx = x - cam.x, rz = z - cam.z, ahead = rx * fx + rz * fz, side = rx * fz - rz * fx;
       if (this.fresh || ahead < -len - 2 || ahead > 140 || Math.abs(side) > 16) {
         // новый штрих появляется далеко впереди, в стороне от оси взгляда, чтобы не мельтешить прямо перед машиной
-        const a = this.fresh ? Math.random() * 130 : 70 + Math.random() * 60, sgn = Math.random() < 0.5 ? -1 : 1, s = sgn * (1.6 + Math.random() * 11);
+        const a = this.fresh ? Math.random() * 130 : 70 + Math.random() * 60, sgn = Math.random() < 0.5 ? -1 : 1, s = sgn * (1.3 + Math.random() * 10);
         x = cam.x + fx * a + fz * s; z = cam.z + fz * a - fx * s; y = 0.2 + Math.random() * 2.4;
         this.p[i * 3] = x; this.p[i * 3 + 1] = y; this.p[i * 3 + 2] = z;
       }
