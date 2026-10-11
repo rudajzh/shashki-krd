@@ -97,3 +97,15 @@ html { touch-action: none; }
 /* старт со светофора */
 .pad button.launch { width: auto; height: 64px; border-radius: 16px; background: rgba(229, 83, 42, 0.85); font-size: 18px; animation: pulse 0.4s ease-in-out infinite alternate; }
 .tip { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); background: rgba(12, 16, 22, 0.72); border-radius: 12px; padding: 8px 14px; font-size: 14px; white-space: nowrap; }
+
+/* стартовые огни: пять красных загораются по одному, потом все зелёные — отпускай */
+#lights { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); display: flex; gap: clamp(8px, 2vw, 16px); align-items: center; background: rgba(8, 10, 14, 0.78); border-radius: 18px; padding: 12px 16px 34px; }
+#lights i { width: clamp(26px, 6vw, 44px); height: clamp(26px, 6vw, 44px); border-radius: 50%; background: #2a1414; box-shadow: inset 0 0 0 3px #111; transition: background 0.06s; }
+#lights i.on { background: #ff2a1a; box-shadow: inset 0 0 0 3px #111, 0 0 18px 6px rgba(255, 42, 26, 0.75); }
+#lights i.go { background: #2dff6a; box-shadow: inset 0 0 0 3px #111, 0 0 22px 9px rgba(45, 255, 106, 0.85); }
+#lights b { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 15px; letter-spacing: 0.08em; opacity: 0.85; }
+#lights.go b { color: #2dff6a; font-size: 18px; opacity: 1; animation: pulse 0.12s ease-in-out infinite alternate; }
+#lights.go { box-shadow: 0 0 0 3px rgba(45, 255, 106, 0.7), 0 0 40px rgba(45, 255, 106, 0.5); }
+.tip { animation: glow 0.45s ease-in-out infinite alternate; } /* не pulse: тот двигает transform и сбил бы центровку */
+@keyframes glow { from { box-shadow: 0 0 0 2px rgba(229, 83, 42, 0.5), 0 0 10px rgba(229, 83, 42, 0.3); } to { box-shadow: 0 0 0 2px rgba(229, 83, 42, 1), 0 0 30px rgba(229, 83, 42, 0.75); } }
+.pad button.launch { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.55), 0 0 30px 6px rgba(229, 83, 42, 0.8); }

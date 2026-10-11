@@ -1,7 +1,7 @@
 // Машины потока: три бюджетных седана (в духе Solaris, Rio и Polo), седан бизнес-класса,
 // маршрутка-«пазик» и длинный городской автобус. Формы — те же кривые и сечения, что у машины игрока.
 import * as THREE from 'three';
-import { curve, COL, SEDAN, slab, commonDetails, buildMerged } from './cardetail.js?v=11';
+import { curve, COL, SEDAN, slab, commonDetails, buildMerged } from './cardetail.js?v=12';
 
 // ---------- бюджетные седаны ----------
 // front: 'hex' — большая шестигранная решётка снизу, 'tiger' — узкая решётка между фарами, 'bars' — горизонтальные планки

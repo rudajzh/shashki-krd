@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=11';
-import { Car, alignSteer, steerLockAt } from './car.js?v=11';
-import { LANE_W, laneOffset, halfWidth } from './chain.js?v=11';
-import { makePlayerCar } from './playercar.js?v=11';
-import { nightEnvironment } from './cardetail.js?v=11';
-import { Traffic } from './traffic.js?v=11';
-import { Input } from './input.js?v=11';
-import { Sound } from './audio.js?v=11';
-import { Loop } from './loop.js?v=11';
-import { Smoke } from './smoke.js?v=11';
-import { Signals } from './signals.js?v=11';
-import { Rain } from './weather.js?v=11';
-import { Chase } from './chase.js?v=11';
+import { buildWorld } from './world.js?v=12';
+import { Car, alignSteer, steerLockAt } from './car.js?v=12';
+import { LANE_W, laneOffset, halfWidth } from './chain.js?v=12';
+import { makePlayerCar } from './playercar.js?v=12';
+import { nightEnvironment } from './cardetail.js?v=12';
+import { Traffic } from './traffic.js?v=12';
+import { Input } from './input.js?v=12';
+import { Sound } from './audio.js?v=12';
+import { Loop } from './loop.js?v=12';
+import { Smoke } from './smoke.js?v=12';
+import { Signals } from './signals.js?v=12';
+import { Rain } from './weather.js?v=12';
+import { Chase } from './chase.js?v=12';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -57,7 +57,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=11')).json();
+const data = await (await fetch('data/krasnaya.json?v=12')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();
@@ -81,7 +81,7 @@ const PW = { hl: model.type.len / 2, hw: model.type.wid / 2 };
 const G = {
   state: 'menu', // menu | drive | crash | finish
   score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0, lap: 1, grace: 0, turns: 0, blend: 1,
-  launch: { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g' },
+  launch: { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g', cine: 0, cineOn: false, mix: 0, rivals: [], winAt: 0, line: null },
   routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9, flashT: 0,
 };
 const inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, launch: false };
@@ -98,8 +98,8 @@ function placeAtStart() {
   traffic.density = densityFor(1);
   traffic.reset(car);
   traffic.setStalled('north', []); traffic.setStalled('south', []);
-  Object.assign(G.launch, { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g' });
-  $('launchBtn').hidden = true; $('launchTip').hidden = true;
+  Object.assign(G.launch, { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g', cine: 0, cineOn: false, mix: 0, rivals: [], winAt: 0, line: null });
+  $('launchBtn').hidden = true; $('launchTip').hidden = true; $('lights').hidden = true;
   signals.setEnabled(false);
   rain.reset();
   chase.reset();
@@ -152,7 +152,8 @@ function startRun() {
 
 function endRun(kind) {
   G.state = kind; G.stateT = 0;
-  $('launchBtn').hidden = true; $('launchTip').hidden = true;
+  G.launch.armed = false; G.launch.cineOn = false;
+  $('launchBtn').hidden = true; $('launchTip').hidden = true; $('lights').hidden = true;
   $('drift').hidden = true;
   const best = store.get('best', 0), total = Math.round(G.score);
   if (total > best) store.set('best', total);
@@ -295,37 +296,71 @@ function tick(dt) {
   }
 }
 
-// Старт со светофора. Если игрок стоит первым у стоп-линии на красный, появляется кнопка «ЛАНЧ»:
-// зажал газ и её, отпустил ровно на зелёный — машина выстреливает вперёд и даёт очки.
+// Старт со светофора — мини-игра. Игрок стоит первым у стоп-линии на красный: появляется кнопка «ЛАНЧ».
+// Зажал газ и её — камера пролетает вдоль стартового ряда (рядом встают соперники), на экране загораются
+// пять красных огней по одному в секунду. Все погасли и вспыхнул зелёный — отпускай. Чем точнее, тем сильнее рывок.
+const LIGHTS = 5, COUNT = 5.2; // огней и секунд отсчёта
 function launchControl(dt) {
   const L = G.launch, key = traffic.only, p = traffic.proj[key];
   if (L.boost > 0) { L.boost -= dt; if (inp.throttle > 0) { const k = 6 * dt; car.vx += Math.sin(car.yaw) * k; car.vz += Math.cos(car.yaw) * k; } }
   if (L.stall > 0) { L.stall -= dt; inp.throttle = 0; }
+  // через несколько секунд после старта смотрим, кто впереди
+  if (L.winAt > 0 && G.time >= L.winAt) {
+    L.winAt = 0;
+    const lead = L.rivals.filter((c) => c.active).every((c) => c.s < p.s);
+    if (lead && L.rivals.length) { const b = 800 * G.lap; G.score += b; pop(`Первый со светофора · +${b}`); }
+    L.rivals = [];
+  }
   const sig = signals.enabled ? signals.ahead(key, p.s + PW.hl) : null;
   const atLine = sig && sig.dist < 11 && sig.dist > -1.5 && p.d < 12 && p.facing > 0;
-  // первый ли: между нами и стоп-линией никого
-  let first = atLine;
+  let first = atLine; // первый ли: между нами и стоп-линией никого
   if (first) for (const c of traffic.cars) if (c.active && c.key === key && c.s > p.s && c.s - c.hl < p.s + PW.hl + sig.dist + 1 && Math.abs(c.off - p.lat) < 1.9) { first = false; break; }
   const red = sig && sig.state !== 'g';
   L.ready = !!(first && (red || L.armed) && car.speed < 1.2);
-  if (L.ready && red && inp.launch && inp.throttle > 0) L.armed = true;
+  if (L.ready && red && !L.armed && inp.launch && inp.throttle > 0) {
+    // взвели: отсчёт всегда полный, соперники встают в соседние ряды, камера уходит в пролёт
+    L.armed = true; L.greenAt = -1; L.cine = 0;
+    if (sig.left < COUNT) signals.setLeft(sig.g, COUNT);
+    const lane = Math.max(0, Math.min(p.lanes - 1, Math.round(p.lf / 2 - 0.5 - p.lat / LANE_W)));
+    L.rivals = traffic.stageRacers(key, sig.stop, lane);
+    world.chains[key].at(sig.stop, tmp);
+    L.line = { x: tmp.x, z: tmp.z, dx: tmp.dx, dz: tmp.dz, w: tmp.lf * LANE_W / 2 };
+  }
+  let lit = 0, go = false;
   if (L.armed) {
+    const left = sig ? sig.left : 0;
     if (sig && L.was !== 'g' && sig.state === 'g') L.greenAt = G.time;       // загорелся зелёный
-    if (inp.launch && inp.throttle > 0) {                                    // держим: машина стоит на тормозе, мотор ревёт
+    lit = L.greenAt >= 0 ? 0 : Math.max(0, Math.min(LIGHTS, Math.floor(COUNT - left) + 1));
+    go = L.greenAt >= 0;
+    L.cine += dt;
+    L.cineOn = L.greenAt < 0 && left > 1.3; // пролёт камеры идёт, пока до зелёного больше секунды с небольшим
+    if (inp.launch && inp.throttle > 0) {                                    // держим: машина стоит, мотор ревёт
       inp.throttle = 0; inp.brake = 0; car.vx = car.vz = 0; car.r = 0; car.rpm += (5600 - car.rpm) * Math.min(1, dt * 8);
-      if (L.greenAt >= 0 && G.time - L.greenAt > 1.6) { L.armed = false; L.greenAt = -1; pop('Проспал'); }
+      if (go && G.time - L.greenAt > 1.6) { L.armed = false; pop('Проспал'); }
     } else {                                                                 // отпустили
-      const late = L.greenAt < 0 ? -1 : G.time - L.greenAt;
+      const late = L.greenAt < 0 ? -1 : G.time - L.greenAt, ms = `${late.toFixed(2).replace('.', ',')} с`;
       if (late < 0) { L.stall = 0.9; pop('Фальстарт'); }
-      else if (late <= 0.4) { const b = 1200 * G.lap; G.score += b; L.boost = 1.8; car.vx += Math.sin(car.yaw) * 5; car.vz += Math.cos(car.yaw) * 5; pop(`Идеальный старт · +${b}`); sound.whoosh(); }
-      else if (late <= 1.0) { const b = 400 * G.lap; G.score += b; L.boost = 1.2; pop(`Хороший старт · +${b}`); }
-      else pop('Поздно');
-      L.armed = false; L.greenAt = -1;
+      else if (late <= 0.4) { const b = 1200 * G.lap; G.score += b; L.boost = 1.8; car.vx += Math.sin(car.yaw) * 5; car.vz += Math.cos(car.yaw) * 5; pop(`Идеальный старт · ${ms} · +${b}`); sound.whoosh(); }
+      else if (late <= 1.0) { const b = 400 * G.lap; G.score += b; L.boost = 1.2; pop(`Хороший старт · ${ms} · +${b}`); }
+      else pop(`Поздно · ${ms}`);
+      L.armed = false;
+      if (late >= 0 && L.rivals.length) L.winAt = G.time + 4;
     }
   }
+  if (!L.armed) L.cineOn = false;
+  // плавное включение и выключение пролёта
+  L.mix += ((L.cineOn ? 1 : 0) - L.mix) * Math.min(1, dt * (L.cineOn ? 5 : 3.2));
   L.was = sig ? sig.state : 'g';
   $('launchBtn').hidden = !L.ready;
-  $('launchTip').hidden = !L.ready;
+  $('launchTip').hidden = !(L.ready && !L.armed);
+  // стартовые огни
+  const box = $('lights');
+  box.hidden = !L.armed;
+  if (L.armed) {
+    for (let i = 0; i < LIGHTS; i++) box.children[i].className = go ? 'go' : i < lit ? 'on' : '';
+    $('lightsText').textContent = go ? 'ОТПУСКАЙ!' : 'ДЕРЖИ…';
+    box.classList.toggle('go', go);
+  }
 }
 
 // Помощь, когда руль отпущен. bend — руль, нужный, чтобы ехать по изгибу улицы; pull — слабая
@@ -418,6 +453,17 @@ function draw(dt) {
   const px = car.x - cx * dist, pz = car.z - cz * dist;
   camera.position.set(mx + (px - mx) * bl + (Math.random() - 0.5) * sh, my + (height - my) * bl + (Math.random() - 0.5) * sh, mz + (pz - mz) * bl + (Math.random() - 0.5) * sh);
   camera.lookAt(car.x + cx * 8 * bl, 0.8 + 0.2 * bl, car.z + cz * 8 * bl);
+  // Пролёт перед стартом: камера идёт низко вдоль стоп-линии, слева направо, лицом к машинам —
+  // видно, кто стоит рядом. К последней секунде она возвращается за машину игрока.
+  if (G.launch.mix > 0.002 && G.launch.line) {
+    const Ln = G.launch.line, m = G.launch.mix, u = Math.min(1, G.launch.cine / 3.6), e = u * u * (3 - 2 * u);
+    const lat = (0.9 - 1.8 * e) * (Ln.w + 2.5), ahead = 9.5 - 2.5 * e;
+    const qx = Ln.x + Ln.dx * ahead + Ln.dz * lat, qz = Ln.z + Ln.dz * ahead - Ln.dx * lat, qy = 0.9 + 0.5 * e;
+    const tx = Ln.x - Ln.dx * 3.5 + Ln.dz * lat * 0.45, tz = Ln.z - Ln.dz * 3.5 - Ln.dx * lat * 0.45;
+    const cp = camera.position, chaseLook = [car.x + cx * 8, 1.0, car.z + cz * 8];
+    cp.set(cp.x + (qx - cp.x) * m, cp.y + (qy - cp.y) * m, cp.z + (qz - cp.z) * m);
+    camera.lookAt(chaseLook[0] + (tx - chaseLook[0]) * m, chaseLook[1] + (0.75 - chaseLook[1]) * m, chaseLook[2] + (tz - chaseLook[2]) * m);
+  }
   if (G.freeCam) { const f = G.freeCam; camera.position.set(f[0], f[1], f[2]); camera.lookAt(f[3], f[4], f[5]); } // отладка: свободная камера
   // угол обзора быстро раскрывается до ~100 км/ч и дальше растёт плавно — скорость чувствуется раньше
   const fov = 60 + 22 * (1 - Math.exp(-v / 26));

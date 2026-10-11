@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -27,7 +27,8 @@
   </div>
   <div class="chips"><div class="chip" id="chase" hidden>ПОГОНЯ · <b id="chaseGap">0 м</b></div><div class="chip rain" id="rain" hidden>Дождь · скользко</div></div>
   <div id="pop"></div>
-  <div class="tip" id="launchTip" hidden>Зажми газ и ЛАНЧ (Shift) · отпусти ЛАНЧ на зелёный</div>
+  <div class="tip" id="launchTip" hidden>Ты первый! Зажми газ и ЛАНЧ (Shift)</div>
+  <div id="lights" hidden><i></i><i></i><i></i><i></i><i></i><b id="lightsText">ДЕРЖИ…</b></div>
   <div class="speed"><b id="speed">0</b><span>км/ч</span><i id="gear">1</i></div>
   <div class="hint" id="rotate">Поверните телефон горизонтально</div>
 </div>
@@ -64,7 +65,7 @@
     <p class="best" id="best"></p>
     <a class="ghostlink" href="car.html">Посмотреть машину вблизи</a>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.11</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.12</p>
   </div>
 </div>
 
@@ -83,6 +84,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=11"></script>
+<script type="module" src="js/main.js?v=12"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 // Светофоры. До третьего круга всегда зелёный. Потом на каждом перекрёстке цикл: зелёный → жёлтый → красный;
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=11';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=12';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
 const COLORS = { g: [0.2, 1, 0.45], y: [1, 0.75, 0.1], r: [1, 0.12, 0.08] };
@@ -85,10 +85,22 @@ export class Signals {
     return Infinity;
   }
 
-  // ближайшая стоп-линия впереди на этой проезжей части: сколько до неё и какой там свет
+  // ближайшая стоп-линия впереди на этой проезжей части: сколько до неё, какой там свет и сколько секунд до зелёного
   ahead(key, front) {
-    for (const it of this.byChain[key]) { const d = it.stop - front; if (d > -2) return { dist: d, state: this.enabled ? it.g.state : 'g' }; }
+    for (const it of this.byChain[key]) {
+      const d = it.stop - front;
+      if (d <= -2) continue;
+      const u = (this.time + it.g.off) % CYCLE;
+      return { dist: d, state: this.enabled ? it.g.state : 'g', left: this.enabled && u >= GREEN ? CYCLE - u : 0, stop: it.stop, g: it.g };
+    }
     return null;
+  }
+  // сделать так, чтобы до зелёного на этом перекрёстке осталось ровно sec секунд (для стартового отсчёта)
+  setLeft(g, sec) {
+    const u = (this.time + g.off) % CYCLE;
+    g.off += (CYCLE - sec) - u;
+    g.state = 'r';
+    this.paint();
   }
 
   update(dt, player, pw, events) {

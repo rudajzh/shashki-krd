@@ -1,8 +1,8 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { laneOffset, halfWidth } from './chain.js?v=11';
-import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=11';
+import { laneOffset, halfWidth } from './chain.js?v=12';
+import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=12';
 
 const AHEAD = 520, BEHIND = 180;
 const OFF = [0, 0, 0], HEAD = [1.0, 0.93, 0.78], TAIL = [0.75, 0.04, 0.03], STOP = [1.0, 0.1, 0.06], BLINK = [1.0, 0.55, 0.05];
@@ -173,21 +173,26 @@ export class Traffic {
   release() { this.held = null; }
 
   // Поставить гонщиков в первый ряд у стоп-линии (stop — где она вдоль оси). Обычные машины с этих мест убираем.
-  stageRacers(key, stop) {
-    const c = this.chains[key];
+  stageRacers(key, stop, skipLane = -1) {
+    const c = this.chains[key], placed = [];
     c.at(stop - 4, this.tmp);
-    const lanes = this.tmp.lanes, lf = this.tmp.lf, free = [...Array(lanes).keys()].sort(() => this.rnd() - 0.5);
-    let n = 0;
+    const lanes = this.tmp.lanes, lf = this.tmp.lf;
+    // сначала ряды рядом с пропущенным (рядом с игроком), остальные — как повезёт
+    const free = [...Array(lanes).keys()].filter((l) => l !== skipLane).sort((a, b) => skipLane < 0 ? this.rnd() - 0.5 : Math.abs(a - skipLane) - Math.abs(b - skipLane));
+    const taken = new Set(this.cars.filter((q) => q.racer && q.active && q.key === key && Math.abs(q.s - stop) < 12).map((q) => q.lane));
     for (const car of this.cars) {
-      if (!car.racer || car.active) continue;
-      const lane = free[n];
-      if (lane === undefined || n >= (lanes > 2 ? 2 : 1)) break;
-      n++;
+      if (!car.racer) continue;
+      if (car.active) { if (car.key === key && Math.abs(car.s - stop) < 12) placed.push(car); continue; }
+      const lane = free.find((l) => !taken.has(l));
+      if (lane === undefined || placed.length >= (lanes > 2 ? 2 : 1)) break;
+      taken.add(lane);
       car.key = key; car.chain = c; car.s = stop - car.hl - 0.8; car.lane = lane; car.nextLane = -1;
       car.off = laneOffset(lane, lf); car.v = 0; car.want = 40 + this.rnd() * 6; car.blinkSide = 0; car.latV = 0; car.prevLong = NaN;
       car.active = true; car.mesh.visible = true;
+      placed.push(car);
       for (const o of this.cars) if (o !== car && o.active && !o.stalled && o.key === key && o.lane === lane && Math.abs(o.s - car.s) < 16) { o.active = false; o.mesh.visible = false; o.retry = 1; }
     }
+    return placed;
   }
 
   // поставить сломанные машины на проезжей части key в точках list (метры вдоль оси); лишние убрать
