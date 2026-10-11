@@ -1,21 +1,22 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=22';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=22';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=22';
-import { makePlayerCar } from './playercar.js?v=22';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=22';
-import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=22';
-import { Traffic } from './traffic.js?v=22';
-import { Input } from './input.js?v=22';
-import { Sound } from './audio.js?v=22';
-import { Loop } from './loop.js?v=22';
-import { Smoke } from './smoke.js?v=22';
-import { Signals } from './signals.js?v=22';
-import { Rain } from './weather.js?v=22';
-import { Chase } from './chase.js?v=22';
-import { Streaks } from './streaks.js?v=22';
-import { SpeedBlur } from './post.js?v=22';
-import { Mirror } from './mirror.js?v=22';
+import { buildWorld } from './world.js?v=23';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=23';
+import { LANE_W, laneOffset, rowOffset, rowAt, halfWidth } from './chain.js?v=23';
+import { makePlayerCar } from './playercar.js?v=23';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=23';
+import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=23';
+import { Traffic } from './traffic.js?v=23';
+import { Input } from './input.js?v=23';
+import { Sound } from './audio.js?v=23';
+import { Loop } from './loop.js?v=23';
+import { Smoke } from './smoke.js?v=23';
+import { Signals } from './signals.js?v=23';
+import { Rain } from './weather.js?v=23';
+import { Chase } from './chase.js?v=23';
+import { Streaks } from './streaks.js?v=23';
+import { SpeedBlur } from './post.js?v=23';
+import { Mirror } from './mirror.js?v=23';
+import { Ads } from './ads.js?v=23';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -64,14 +65,26 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=22')).json();
+const data = await (await fetch('data/krasnaya.json?v=23')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE, gelik: GELIK, lada: PRIORA, seven: CLASSIC };
-let carId = store.get('car', 'sedan'); // на какой машине ездим
-if (!CARS[carId]) carId = 'sedan';
+// ---------- экономика ----------
+// За заезд игрок получает «рубли» — по rate за каждое очко. На них открываются машины (по порядку ORDER) и цвета.
+// Цены прикинуты так: «Лада» — за 20–30 минут игры на «Семёрке», купе — за 10–12 часов; ролик удваивает выручку.
+// Все цифры — здесь, чтобы их было легко подкрутить после первых живых заездов.
+const ECON = { rate: 1.5, prices: { seven: 0, lada: 150000, sedan: 900000, gelik: 2000000, coupe: 4000000 }, color: 40000, freeColors: [0xf2f2f0, 0x15171a, 0xd92b2b] };
+const ORDER = ['seven', 'lada', 'sedan', 'gelik', 'coupe'];
+const UNLOCK_ALL = new URLSearchParams(location.search).has('all'); // для проверки: всё открыто
+let cash = store.get('cash', 0);
+const owned = new Set(store.get('owned', ['seven'])), ownedColors = new Set(store.get('colors', ECON.freeColors));
+const has = (id) => UNLOCK_ALL || owned.has(id), hasColor = (c) => UNLOCK_ALL || ownedColors.has(c);
+const money = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
+let carId = store.get('car', 'seven'); // на какой машине ездим
+if (!CARS[carId] || !has(carId)) carId = 'seven';
 const car = new Car(CARS[carId].setup);
-let color = store.get('color', COLORS[0]);
+let color = store.get('color', ECON.freeColors[2]);
+if (!hasColor(color)) color = ECON.freeColors[2];
 let lightsOn = store.get('lights', true); // играть со светофорами или без
 const envMap = nightEnvironment(renderer); // отражения ночной улицы на лаке и стёклах
 let model = makePlayerCar(color, world.glowTex, envMap, SPECS[carId]); // детальная машина со своим светом
@@ -115,6 +128,10 @@ signals.traffic = traffic;
 const START_LAP = Math.max(1, Math.min(9, +new URLSearchParams(location.search).get('lap') || 1)); // для проверки: ?lap=3
 const input = new Input();
 const sound = new Sound();
+let soundOn = store.get('sound', true);
+sound.setMuted(!soundOn);
+// реклама: пока она идёт, игра стоит и молчит
+const ads = new Ads({ onPause: () => { G.adPause = true; sound.setMuted(true); }, onResume: () => { G.adPause = false; sound.setMuted(!soundOn); } });
 const PW = { hl: model.type.len / 2, hw: model.type.wid / 2 };
 sound.setEngine(CARS[carId].engine);
 
@@ -239,7 +256,10 @@ function startRun() {
   loop.intro(car, world); // срываемся с площадки на дорогу
   $('menu').hidden = true; $('garage').hidden = true; $('result').hidden = true; $('hud').hidden = false;
   $('drift').hidden = true;
-  $('touch').hidden = !matchMedia('(pointer: coarse)').matches;
+  $('touch').hidden = true; // кнопки появятся, когда машина выедет на дорогу и ей можно будет управлять
+  $('pauseBtn').hidden = false;
+  G.paid = 0; G.continued = false; G.doubled = false;
+  ads.gameplay(true);
   sound.start();
 }
 
@@ -248,8 +268,17 @@ function endRun(kind) {
   G.launch.armed = false; G.launch.cineOn = false;
   $('launchBtn').hidden = true; $('launchTip').hidden = true; $('lights').hidden = true;
   $('drift').hidden = true;
+  $('pauseBtn').hidden = true;
+  ads.gameplay(false);
   const best = store.get('best', 0), total = Math.round(G.score);
   if (total > best) store.set('best', total);
+  // выручка за заезд (после «продолжить» — только за то, что набрано с прошлой аварии)
+  G.earn = Math.round((G.score - G.paid) * ECON.rate / 100) * 100;
+  G.paid = G.score; G.doubled = false;
+  addCash(G.earn);
+  $('resCash').textContent = '+' + money(G.earn);
+  $('resDouble').hidden = G.earn <= 0;
+  $('resContinue').hidden = G.continued;
   $('resTitle').textContent = kind === 'busted' ? 'Приплыли' : G.why === 'curb' ? 'Зацепил бордюр' : 'Авария';
   $('resText').textContent = (kind === 'busted' ? 'Патруль догнал · ' : '') + `${fmtTime(G.time)} за рулём · максимум ${Math.round(G.top * 3.6)} км/ч` + (total > best && best > 0 ? ' · новый рекорд' : '');
   $('resScore').textContent = total.toLocaleString('ru-RU');
@@ -262,9 +291,12 @@ const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padSt
 function showMenu() {
   G.state = 'menu';
   placeAtStart();
+  trial = null; // тест-драйв кончился
   if (carId !== picked) setCar(picked, false);
-  G.garage = false;
-  $('menu').hidden = false; $('garage').hidden = true; $('result').hidden = true; $('hud').hidden = true; $('touch').hidden = true;
+  G.garage = false; G.paused = false;
+  ads.gameplay(false);
+  $('menu').hidden = false; $('garage').hidden = true; $('result').hidden = true; $('hud').hidden = true; $('touch').hidden = true; $('pause').hidden = true; $('pauseBtn').hidden = true;
+  paintCash();
   const best = store.get('best', 0);
   $('best').textContent = best ? `Рекорд: ${best.toLocaleString('ru-RU')}` : '';
 }
@@ -398,7 +430,10 @@ function tick(dt) {
     if (chase.active) { $('chaseGap').textContent = Math.max(0, Math.round(chase.gap)) + ' м'; $('chase').classList.toggle('close', chase.gap < 70); }
   } else {
     G.stateT += dt;
-    if ((G.state === 'crash' || G.state === 'busted') && G.stateT > 0.9 && $('result').hidden) { $('result').hidden = false; $('hud').hidden = true; $('touch').hidden = true; }
+    if ((G.state === 'crash' || G.state === 'busted') && G.stateT > 0.9 && $('result').hidden) {
+      $('result').hidden = false; $('hud').hidden = true; $('touch').hidden = true;
+      if (G.time >= 30) ads.interstitial(); // полноэкранная реклама — только после настоящего заезда; чаще раза в три минуты она сама не покажется
+    }
   }
 }
 
@@ -529,6 +564,7 @@ function turnDone(res) {
   G.grace = 1.5;
   $('drift').hidden = true;
   G.handsOff = 9;
+  $('touch').hidden = !coarse;
   if (res.kind === 'intro') return;
   const k = Math.min(1, res.drift * 1.15), pct = Math.round(k * 100);
   const bonus = Math.round((300 + 900 * k) * G.lap / 10) * 10;
@@ -544,6 +580,25 @@ function turnDone(res) {
     if (!chase.active) { chase.start(G.lap, car.speed); sound.siren(1); setTimeout(() => { if (G.state === 'drive' && chase.active) pop('Погоня! Не сбавляй'); }, 1600); }
   } else if (chase.lose()) { const b = 1000 * G.lap; G.score += b; pop(`Ушёл от погони · +${b}`); }
   else pop(`${what} · +${bonus}`);
+}
+
+// Продолжить после аварии (за ролик, один раз за заезд): машина снова на своей стороне дороги, в ближайшем ряду,
+// на 60 км/ч, первые три секунды её нельзя разбить.
+function continueRun() {
+  const key = traffic.only, ch = world.chains[key], p = traffic.proj[key];
+  let s = Math.max(30, Math.min(ch.total - 80, p.s));
+  const turnS = key === 'north' ? loop.linkS : loop.southS;
+  if (turnS - s < 90 && turnS - s > -20) s = turnS - 90; // не ставим прямо перед разворотом
+  ch.at(s, tmp);
+  const off = rowOffset(rowAt(p.lat, tmp), tmp), yaw = Math.atan2(tmp.dx, tmp.dz);
+  car.reset(tmp.x + tmp.dz * off, tmp.z - tmp.dx * off, yaw);
+  car.vx = tmp.dx * 16.7; car.vz = tmp.dz * 16.7;
+  traffic.clearNear(car.x, car.z, 16);
+  loop.active = null; traffic.release(); traffic.gates = [];
+  if (chase.active) chase.gap = Math.max(chase.gap, 200);
+  Object.assign(G, { state: 'drive', stateT: 0, grace: 3, continued: true, shake: 0, combo: 1, comboT: 0, camYaw: yaw, handsOff: 9 });
+  $('result').hidden = true; $('hud').hidden = false; $('touch').hidden = !coarse; $('pauseBtn').hidden = false;
+  ads.gameplay(true);
 }
 
 function crash(rel, why) {
@@ -711,7 +766,7 @@ function draw(dt) {
   sound.weather(rain.wet, chase.active && G.state === 'drive' ? Math.max(0, 1 - chase.gap / 200) : 0);
   $('cops').style.opacity = chase.active && G.state === 'drive' && chase.gap < 90 ? (0.55 * (1 - chase.gap / 90) * (Math.floor(chase.flash * 5) % 2 ? 1 : 0.35)).toFixed(2) : '0';
   $('cops').classList.toggle('blue', Math.floor(chase.flash * 5) % 2 === 0);
-  sound.update(car.rpm, G.state === 'drive' ? (G.launch.rev ? 1 : inp.throttle) : 0, Math.max(car.slip, hardBrake * (0.75 - 0.5 * rain.wet)), v, G.state === 'drive', car.gear);
+  sound.update(car.rpm, G.state === 'drive' ? (G.launch.rev ? 1 : inp.throttle) : 0, Math.max(car.slip, hardBrake * (0.75 - 0.5 * rain.wet)), v, G.state === 'drive' && !G.paused && !G.adPause, car.gear);
   // зеркало заднего вида — во всех видах, кроме пролёта перед стартом
   const showMirror = driving && !G.freeCam && bl > 0.95 && G.launch.mix < 0.15;
   if ($('mirror').hidden === showMirror) $('mirror').hidden = !showMirror;
@@ -724,30 +779,47 @@ function frame(now) {
   if (world.tickClock && now - clockAt > 20000) { clockAt = now; world.tickClock(); } // электронные часы на здании идут по-настоящему
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  tick(dt);
-  draw(dt);
+  if (!G.paused && !G.adPause) tick(dt);
+  draw(G.paused || G.adPause ? 0 : dt);
   requestAnimationFrame(frame);
 }
 
-// ---------- меню и гараж ----------
+// ---------- меню, гараж, пауза ----------
 // Быстрые кнопки срабатывают по касанию, а не по отпусканию: так они не «проглатывают» частые нажатия.
 const tap = (id, fn) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); fn(e); });
+function paintCash() { $('cash').textContent = $('gCash').textContent = money(cash); }
+function addCash(n) { cash = Math.max(0, cash + n); store.set('cash', cash); paintCash(); }
+
+// цвета: свои — сразу, остальные можно примерить, а потом купить или получить за ролик
 const sw = $('swatches');
+let tryColor = null; // цвет, который примеряют
+function paintSwatches() {
+  [...sw.children].forEach((b, i) => { b.classList.toggle('sel', COLORS[i] === (tryColor ?? color)); b.classList.toggle('lock', !hasColor(COLORS[i])); });
+  const locked = tryColor !== null && !hasColor(tryColor);
+  $('gColorBar').hidden = !locked;
+  if (locked) { $('gColorBuy').textContent = 'Цвет · ' + money(ECON.color); $('gColorBuy').disabled = cash < ECON.color; }
+}
+function takeColor(c) { ownedColors.add(c); store.set('colors', [...ownedColors]); color = c; store.set('color', c); tryColor = null; model.setColor(c); paintSwatches(); }
 COLORS.forEach((c) => {
   const b = document.createElement('button');
   b.style.background = '#' + c.toString(16).padStart(6, '0');
-  b.classList.toggle('sel', c === color);
   b.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    color = c; store.set('color', c); model.setColor(c);
-    for (const o of sw.children) o.classList.toggle('sel', o === b);
+    model.setColor(c);
+    if (hasColor(c)) { color = c; store.set('color', c); tryColor = null; } else tryColor = c;
+    paintSwatches();
   });
   sw.append(b);
 });
+$('gColorBuy').addEventListener('click', () => { if (tryColor !== null && cash >= ECON.color) { addCash(-ECON.color); takeColor(tryColor); } });
+$('gColorAd').addEventListener('click', () => { const c = tryColor; if (c !== null) ads.rewarded().then((ok) => { if (ok) takeColor(c); }); });
+
 // вид: сзади → с капота → из-за руля
-function nextView() { G.view = (G.view + 1) % 3; store.set('view', G.view); }
+const VIEWS = ['Сзади', 'С капота', 'Из салона'];
+function nextView() { G.view = (G.view + 1) % 3; store.set('view', G.view); $('viewName').textContent = VIEWS[G.view]; }
 G.view = store.get('view', 0) % 3;
-tap('viewBtn', nextView);
+$('viewName').textContent = VIEWS[G.view];
+$('viewBtn').addEventListener('click', nextView);
 
 // характеристики машины для гаража: разгон и максималку меряем на той же физике, что и в игре
 const statCache = {};
@@ -760,9 +832,10 @@ function carStats(id) {
   return (statCache[id] = { t100, top: probe.speed * 3.6, mass: CARS[id].setup.mass, roll: CARS[id].feel.roll });
 }
 let picked = carId; // машина, на которой поедем; в гараже можно примерить другую и не выбрать
+let trial = null;   // машина, взятая на один заезд за ролик
 const paintCar = () => { $('carName').textContent = CARS[picked].name; };
 function paintGarage() {
-  const c = CARS[carId], st = carStats(carId);
+  const c = CARS[carId], st = carStats(carId), price = ECON.prices[carId], mine = has(carId);
   $('gName').textContent = c.name; $('gNote').textContent = c.note;
   const rows = [
     ['Разгон 0–100', (9.5 - st.t100) / 7, st.t100.toFixed(1).replace('.', ',') + ' с'],
@@ -771,11 +844,15 @@ function paintGarage() {
     ['Масса', st.mass / 2700, (st.mass / 1000).toFixed(2).replace('.', ',') + ' т'],
   ];
   $('gStats').innerHTML = rows.map(([n, k, v]) => `<div><span>${n}</span><em><u style="width:${Math.round(Math.max(0.06, Math.min(1, k)) * 100)}%"></u></em><b>${v}</b></div>`).join('');
-  $('gSelect').textContent = carId === picked ? 'Выбрано' : 'Выбрать';
+  const btn = $('gSelect');
+  btn.textContent = mine ? (carId === picked ? 'Выбрано' : 'Выбрать') : cash >= price ? 'Купить · ' + money(price) : 'Нужно ещё ' + money(price - cash);
+  btn.disabled = !mine && cash < price;
+  btn.classList.toggle('locked', !mine && cash < price);
+  $('gTrial').hidden = mine;
+  paintSwatches();
 }
 function stepCar(step) {
-  const ids = Object.keys(CARS);
-  setCar(ids[(ids.indexOf(carId) + step + ids.length) % ids.length], false);
+  setCar(ORDER[(ORDER.indexOf(carId) + step + ORDER.length) % ORDER.length], false);
   paintGarage();
 }
 function openGarage(open) {
@@ -784,17 +861,31 @@ function openGarage(open) {
   if (open) {
     paintGarage();
     // остальные машины строим заранее, по одной, пока игрок смотрит на первую: листание не будет подвисать
-    const rest = Object.keys(CARS).filter((id) => !models[id]);
+    const rest = ORDER.filter((id) => !models[id]);
     const next = () => { const id = rest.shift(); if (!id || !G.garage) return; models[id] = makePlayerCar(color, world.glowTex, envMap, SPECS[id]); setTimeout(next, 120); };
     setTimeout(next, 300);
+  } else {
+    if (carId !== picked) setCar(picked, false); // ушли, не выбрав — возвращаем свою
+    tryColor = null; model.setColor(color);       // и свой цвет
   }
-  else if (carId !== picked) setCar(picked, false); // ушли, не выбрав — возвращаем свою
 }
 tap('carPrev', () => stepCar(-1));
 tap('carNext', () => stepCar(1));
 $('garageBtn').addEventListener('click', () => openGarage(true));
 $('garageBack').addEventListener('click', () => openGarage(false));
-$('gSelect').addEventListener('click', () => { picked = carId; store.set('car', picked); paintCar(); openGarage(false); });
+$('gSelect').addEventListener('click', () => {
+  if (!has(carId)) { // покупка
+    const price = ECON.prices[carId];
+    if (cash < price) return;
+    addCash(-price); owned.add(carId); store.set('owned', [...owned]);
+  }
+  picked = carId; store.set('car', picked); paintCar(); openGarage(false);
+});
+// тест-драйв: один заезд на закрытой машине за ролик
+$('gTrial').addEventListener('click', () => { const id = carId; ads.rewarded().then((ok) => { if (!ok) return; trial = id; G.garage = false; $('garage').hidden = true; if (carId !== id) setCar(id, false); startRun(); }); });
+// экран результата: удвоить выручку и продолжить — за ролик
+$('resDouble').addEventListener('click', () => { if (G.doubled || $('result').hidden || G.state === 'drive') return; ads.rewarded().then((ok) => { if (!ok || G.doubled || G.state === 'drive') return; G.doubled = true; addCash(G.earn); $('resCash').textContent = '+' + money(G.earn * 2); $('resDouble').hidden = true; }); });
+$('resContinue').addEventListener('click', () => { if (G.continued || G.state === 'drive') return; ads.rewarded().then((ok) => { if (ok && G.state !== 'drive' && G.state !== 'menu') continueRun(); }); });
 // в гараже машину можно покрутить пальцем или мышью
 let dragX = null;
 canvas.addEventListener('pointerdown', (e) => { if (G.garage) dragX = e.clientX; });
@@ -803,22 +894,39 @@ addEventListener('pointerup', () => { dragX = null; });
 paintCar();
 matchRivals(carId);
 // способ рулить на экране телефона: стрелки, руль или наклон
-const paintCtl = () => { for (const b of $('ctlSeg').children) b.classList.toggle('sel', b.dataset.m === input.mode); };
-for (const b of $('ctlSeg').children) b.addEventListener('click', () => { input.setMode(b.dataset.m); store.set('ctl', input.mode); paintCtl(); });
+const ctlButtons = [...$('ctlSeg').children, ...$('ctlSeg2').children]; // один и тот же выбор — в меню и в паузе
+const paintCtl = () => { for (const b of ctlButtons) b.classList.toggle('sel', b.dataset.m === input.mode); };
+for (const b of ctlButtons) b.addEventListener('click', () => { input.setMode(b.dataset.m); store.set('ctl', input.mode); paintCtl(); });
 input.setMode(store.get('ctl', 'arrows'));
-$('ctlRow').hidden = !coarse;
+$('ctlRow').hidden = $('ctlRow2').hidden = !coarse;
 paintCtl();
+// звук — в меню и в паузе
+const paintSound = () => { for (const id of ['soundBtn', 'soundBtn2']) { $(id).classList.toggle('on', soundOn); $(id).setAttribute('aria-checked', soundOn); } };
+for (const id of ['soundBtn', 'soundBtn2']) $(id).addEventListener('click', () => { soundOn = !soundOn; store.set('sound', soundOn); sound.setMuted(!soundOn); paintSound(); });
+paintSound();
+// пауза: игра стоит, здесь же вид, руль и звук
+function setPause(on) {
+  if (on && G.state !== 'drive') return;
+  G.paused = on;
+  $('pause').hidden = !on; $('pauseBtn').hidden = on || G.state !== 'drive';
+  ads.gameplay(!on && G.state === 'drive');
+  last = performance.now();
+}
+tap('pauseBtn', () => setPause(true));
+$('resume').addEventListener('click', () => setPause(false));
+$('pauseMenu').addEventListener('click', () => { setPause(false); showMenu(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPause(true); }); // свернули игру — пауза
 const paintLights = () => { $('lightsBtn').classList.toggle('on', lightsOn); $('lightsBtn').setAttribute('aria-checked', lightsOn); };
 $('lightsBtn').addEventListener('click', () => { lightsOn = !lightsOn; store.set('lights', lightsOn); paintLights(); });
 paintLights();
 $('go').addEventListener('click', startRun);
 $('again').addEventListener('click', startRun);
 $('toMenu').addEventListener('click', showMenu);
-$('mute').addEventListener('click', () => { sound.setMuted(!sound.muted); $('mute').textContent = sound.muted ? '🔇' : '🔊'; });
 addEventListener('keydown', (e) => {
-  if (e.code === 'KeyR' && G.state !== 'menu') startRun();
+  if (e.code === 'KeyR' && G.state !== 'menu' && !G.paused) startRun();
   if (e.code === 'KeyC' || e.code === 'KeyV') nextView();
-  if (e.code === 'Enter' && G.state !== 'drive') startRun();
+  if (e.code === 'Escape' || e.code === 'KeyP') setPause(!G.paused);
+  if (e.code === 'Enter' && G.state !== 'drive' && !G.garage) startRun();
 });
 addEventListener('contextmenu', (e) => e.preventDefault());
 // Safari на айфоне игнорирует запрет масштаба в meta — гасим щипок и двойное касание сами

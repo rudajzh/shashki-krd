@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=22">
+<link rel="stylesheet" href="style.css?v=23">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -79,12 +79,14 @@
   </div>
   <div class="panel">
     <button id="go" class="primary">Поехали</button>
+    <div class="rowset"><span>Баланс</span><b class="cash" id="cash">0 ₽</b></div>
     <button id="garageBtn" class="rowbtn"><span>Автомобиль</span><b id="carName">Седан</b><i>›</i></button>
     <div class="rowset"><span>Светофоры</span><button id="lightsBtn" class="switch" role="switch" aria-label="Светофоры"><i></i></button></div>
+    <div class="rowset"><span>Звук</span><button id="soundBtn" class="switch" role="switch" aria-label="Звук"><i></i></button></div>
     <div class="rowset" id="ctlRow"><span>Руль</span><div class="seg" id="ctlSeg"><button data-m="arrows">Стрелки</button><button data-m="wheel">Руль</button><button data-m="tilt">Наклон</button></div></div>
     <p class="keys">Пробел — моргнуть, C — вид, Shift — старт со светофора</p>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: <b>Поделиться</b> → <b>На экран «Домой»</b></p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.22</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.23</p>
   </div>
 </div>
 
@@ -92,6 +94,7 @@
 <div id="garage" class="screen" hidden>
   <button id="garageBack" class="back">‹ Назад</button>
   <div class="gpanel">
+    <div class="gcash"><span>Баланс</span><b class="cash" id="gCash">0 ₽</b></div>
     <div class="gpick">
       <button id="carPrev" aria-label="Предыдущая машина">‹</button>
       <div><b id="gName">Седан</b><span id="gNote"></span></div>
@@ -99,7 +102,9 @@
     </div>
     <div class="gstats" id="gStats"></div>
     <div class="swatches" id="swatches"></div>
+    <div class="gbuy" id="gColorBar" hidden><button id="gColorBuy" class="ghost">Купить цвет</button><button id="gColorAd" class="ghost">За ролик</button></div>
     <button id="gSelect" class="primary">Выбрать</button>
+    <button id="gTrial" class="ghost" hidden>Тест-драйв за ролик</button>
   </div>
 </div>
 
@@ -112,15 +117,27 @@
       <div><span>Впритирку</span><b id="resNear">0</b></div>
       <div><span>Круг</span><b id="resTop">1</b></div>
     </div>
+    <p class="earn" id="resCash"></p>
+    <div class="gbuy"><button id="resContinue" class="ghost">Продолжить за ролик</button><button id="resDouble" class="ghost">×2 за ролик</button></div>
     <button id="again" class="primary">Ещё раз</button>
     <button id="toMenu" class="ghost">В меню</button>
   </div>
 </div>
 
-<button id="mute" aria-label="Звук">🔊</button>
-<button id="viewBtn" aria-label="Сменить вид" title="Вид (C)">
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l1.5-2h9L18 8h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
-</button>
-<script type="module" src="js/main.js?v=22"></script>
+<button id="pauseBtn" aria-label="Пауза" hidden><svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg></button>
+
+<!-- пауза: здесь же вид камеры, способ рулить и звук -->
+<div id="pause" class="overlay" hidden>
+  <div class="card">
+    <h1>Пауза</h1>
+    <button id="resume" class="primary">Продолжить</button>
+    <button id="viewBtn" class="rowbtn"><span>Вид</span><b id="viewName">Сзади</b><i>›</i></button>
+    <div class="rowset" id="ctlRow2"><span>Руль</span><div class="seg" id="ctlSeg2"><button data-m="arrows">Стрелки</button><button data-m="wheel">Руль</button><button data-m="tilt">Наклон</button></div></div>
+    <div class="rowset"><span>Звук</span><button id="soundBtn2" class="switch" role="switch" aria-label="Звук"><i></i></button></div>
+    <button id="pauseMenu" class="ghost">В меню</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js?v=23"></script>
 </body>
 </html>

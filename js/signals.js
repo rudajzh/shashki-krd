@@ -2,7 +2,7 @@
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
 // Один ряд перед каждой стоп-линией остаётся пустым (free): по нему игрок всегда может подъехать первым.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=22';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=23';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
 const CROSS_V = 13; // скорость машин на поперечной улице, м/с

@@ -205,3 +205,29 @@ button.primary { margin: 0; padding: 17px 14px; border-radius: 16px; font-size: 
 @media (max-height: 430px) { .panel, .gpanel { gap: 7px; padding: 12px; } button.primary { padding: 13px; font-size: 18px; } .rowbtn, .rowset { min-height: 44px; } .keys { display: none; } .brand h1 { font-size: 44px; } }
 
 @media (pointer: coarse) { .keys { display: none; } }
+
+/* ---------- деньги, покупки, заглушка рекламы ---------- */
+.cash { margin-left: auto; font-size: 17px; color: #ffd27a; font-variant-numeric: tabular-nums; }
+.gcash { display: flex; align-items: center; font-size: 13px; }
+.gcash span { opacity: 0.65; letter-spacing: 0.04em; text-transform: uppercase; }
+.gbuy { display: flex; gap: 8px; }
+.gbuy button { margin: 0; flex: 1; padding: 11px 6px; font-size: 14px; }
+button.ghost:disabled, button.primary:disabled { opacity: 0.45; cursor: default; }
+button.primary.locked { background: linear-gradient(180deg, #3a4150, #262b36); box-shadow: none; }
+.swatches button.lock { position: relative; opacity: 0.75; }
+.swatches button.lock::after { content: ''; position: absolute; inset: 9px 11px 7px; border-radius: 3px; background: rgba(0, 0, 0, 0.6); box-shadow: 0 -5px 0 -1px rgba(0, 0, 0, 0), 0 0 0 1.5px rgba(255, 255, 255, 0.8); }
+.earn { font-size: 22px; font-weight: 800; color: #ffd27a; margin: 4px 0 10px !important; }
+#result .card .gbuy { margin-bottom: 8px; }
+#result .card button.primary { width: 100%; }
+.fakead { position: fixed; inset: 0; z-index: 50; background: rgba(4, 6, 10, 0.94); display: grid; place-items: center; text-align: center; }
+.fakead div { display: grid; gap: 8px; }
+.fakead b { font-size: 24px; }
+.fakead span { opacity: 0.6; font-size: 14px; }
+.fakead i { height: 4px; border-radius: 2px; background: #e5532a; animation: fakead 1.6s linear; transform-origin: 0 50%; }
+@keyframes fakead { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+#pauseBtn { position: fixed; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); width: 46px; height: 46px; border-radius: 14px; border: 0; background: rgba(12, 16, 22, 0.62); color: #fff; display: grid; place-items: center; cursor: pointer; z-index: 7; }
+#pause .card { display: flex; flex-direction: column; gap: 10px; text-align: left; }
+#pause .card h1 { text-align: center; margin-bottom: 4px; }
+#pause .card button.ghost { margin: 0; }
+#mirror { border-radius: 12px; }

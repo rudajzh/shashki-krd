@@ -11,7 +11,19 @@ export class Mirror {
     const geo = new THREE.PlaneGeometry(2, 2);
     const uv = geo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i)); // отражение: лево и право меняются местами
-    this.quad = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: this.rt.texture, depthTest: false, depthWrite: false, fog: false }));
+    // углы картинки скругляем сами, чтобы она не торчала из рамки
+    this.quad = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+      uniforms: { map: { value: this.rt.texture }, aspect: { value: 3.5 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `uniform sampler2D map; uniform float aspect; varying vec2 vUv;
+        void main() {
+          vec2 p = (abs(vUv - 0.5) * 2.0) * vec2(aspect, 1.0), q = max(p - (vec2(aspect, 1.0) - 0.22), 0.0);
+          if (length(q) > 0.22) discard;
+          gl_FragColor = texture2D(map, vUv);
+          #include <colorspace_fragment>
+        }`,
+      depthTest: false, depthWrite: false,
+    }));
     this.quad.frustumCulled = false;
     this.scene = new THREE.Scene();
     this.scene.add(this.quad);
@@ -33,8 +45,10 @@ export class Mirror {
       r.setRenderTarget(null);
     }
     r.getSize(this.size);
-    r.setViewport(rect.left, this.size.y - rect.bottom, rect.width, rect.height);
-    r.setScissor(rect.left, this.size.y - rect.bottom, rect.width, rect.height);
+    const b = 3, vx = rect.left + b, vy = this.size.y - rect.bottom + b, vw = rect.width - b * 2, vh = rect.height - b * 2; // внутри рамки
+    this.quad.material.uniforms.aspect.value = vw / vh;
+    r.setViewport(vx, vy, vw, vh);
+    r.setScissor(vx, vy, vw, vh);
     r.setScissorTest(true);
     const auto = r.autoClear;
     r.autoClear = false;
