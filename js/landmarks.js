@@ -1,7 +1,7 @@
 // Узнаваемые места Красной: Александровская арка, «Аврора», фонтаны, башня Шухова,
 // вывески на зданиях и синие таблички с названиями поперечных улиц.
 import * as THREE from 'three';
-import { halfWidth } from './chain.js?v=13';
+import { halfWidth } from './chain.js?v=14';
 
 // ночью знаковые объекты подсвечены: материал немного светится собственным цветом
 const L = (color, extra) => new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.28, ...extra });
@@ -366,8 +366,12 @@ function rotunda(scene, x, z, chains) {
   const o = {};
   chains.north.project(x, z, -1, o);
   const yaw = Math.atan2(o.dx, o.dz), g = new THREE.Group(), wh = L(0xe9e6dd), win = new THREE.MeshBasicMaterial({ color: 0x2b3a4a }), glow = new THREE.MeshBasicMaterial({ color: 0xffe0a8 });
-  g.position.set(x, 0, z);
-  g.rotation.y = yaw; // +x — к дороге
+  // (x, z) — центр ротонды. Здание стоит к западу от улицы: зеркалим модель, чтобы ротонда и окна смотрели на восток,
+  // на дорогу; крыло уходит от ротонды на север вдоль улицы.
+  g.rotation.y = yaw;
+  g.scale.x = -1;
+  const lx = -1.5, lz = -28; // где ротонда в осях модели (с учётом зеркала)
+  g.position.set(x - (lx * Math.cos(yaw) + lz * Math.sin(yaw)), 0, z - (-lx * Math.sin(yaw) + lz * Math.cos(yaw)));
   box(g, wh, 15, 15, 64, -4, 7.5, 6);                                // длинное крыло вдоль улицы
   for (let i = 0; i < 12; i++) for (const y of [4.2, 8.4, 12.2]) box(g, i % 3 === 1 ? glow : win, 0.2, 2.4, 2.6, 3.55, y, -22 + i * 5.2);
   box(g, wh, 15.6, 0.6, 64.6, -4, 15.2, 6);
@@ -383,6 +387,36 @@ function rotunda(scene, x, z, chains) {
   }
   for (const a of [-0.3, 0, 0.3]) { const d = box(g, new THREE.MeshBasicMaterial({ color: 0x1c1410 }), 0.25, 3.2, 1.7, 1.5 + Math.cos(a) * 9.6, 1.9, -28 + Math.sin(a) * 9.6); d.rotation.y = -a; } // три двери
   scene.add(g);
+}
+
+// Вечная стройка напротив: синий забор, серый бетонный каркас без стен и башенный кран с красным огнём.
+function construction(scene, x, z, chains, addGlow) {
+  const o = {};
+  chains.north.project(x, z, -1, o);
+  const g = new THREE.Group(), conc = L(0x6a6c70), dark = L(0x3a3c40), fence = L(0x2a5aa8), yel = L(0xd9a514);
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.atan2(o.dx, o.dz); // +x — к дороге, z — вдоль улицы
+  const W = 16, Ln = 52, floors = 5, H = 3.4;
+  for (let f = 1; f <= floors; f++) box(g, conc, W, 0.3, Ln, -5, f * H, 0);                         // перекрытия
+  for (let i = 0; i <= 6; i++) for (const cx of [-12.6, -5, 2.6]) box(g, dark, 0.5, floors * H, 0.5, cx, floors * H / 2, -Ln / 2 + 0.4 + i * (Ln - 0.8) / 6); // колонны
+  box(g, dark, 5, floors * H + 3, 5, -5, (floors * H + 3) / 2, 6);                                   // лестнично-лифтовой узел
+  for (let i = 0; i < 4; i++) box(g, L(0x7f4f2a), 2.2, 1.2, 1.2, 0.5, floors * H + 0.75, -18 + i * 9); // поддоны с кирпичом наверху
+  box(g, fence, 0.12, 2.2, Ln + 14, 6.4, 1.1, 0);                                                    // забор вдоль тротуара
+  for (let i = 0; i <= 11; i++) box(g, L(0x1d4585), 0.16, 2.3, 0.16, 6.42, 1.15, -(Ln + 14) / 2 + i * (Ln + 14) / 11);
+  // кран
+  const mh = 40;
+  box(g, yel, 1.3, mh, 1.3, -15, mh / 2, -14);
+  box(g, yel, 34, 1.0, 1.0, -3, mh + 0.6, -14); box(g, yel, 10, 0.9, 0.9, -24, mh + 0.6, -14);
+  box(g, dark, 3, 2, 2.4, -27, mh - 0.4, -14);                                                       // противовес
+  box(g, yel, 1.6, 2.4, 1.6, -14, mh + 2.2, -14);                                                    // кабина
+  box(g, dark, 0.08, 16, 0.08, 6, mh - 8, -14);                                                      // трос с крюком
+  scene.add(g);
+  if (addGlow) {
+    const cs = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y), at = (ax, az) => [x + ax * cs + az * sn, z - ax * sn + az * cs];
+    const [tx, tz] = at(-15, -14); addGlow(tx, mh + 3.8, tz, 0xff2a1a, 1.4);                          // красный огонь на макушке
+    const [jx, jz] = at(13, -14); addGlow(jx, mh + 1.4, jz, 0xff2a1a, 0.9);
+    const [px, pz] = at(4, 10); addGlow(px, 7, pz, 0xfff0c8, 1.6);                                    // прожектор на площадке
+  }
 }
 
 // Большой фонтан перед аркой с колоколом-памятником: тёмный «колокол» на арках с золотыми фигурами внутри,
@@ -632,6 +666,7 @@ export function buildLandmarks(scene, data, chains, { textPlane, addSolid, named
   if (lm.clock) flowerClock(scene, lm.clock[0], lm.clock[1], chains, addGlow);
   if (lm.bell) bellFountain(scene, lm.bell[0], lm.bell[1], addSolid, addGlow);
   if (lm.kubgtu) rotunda(scene, lm.kubgtu[0], lm.kubgtu[1], chains);
+  if (lm.site) construction(scene, lm.site[0], lm.site[1], chains, addGlow);
   if (custom.store) { chains.south.project(custom.store[0], custom.store[1], -1, o); tick = store(scene, custom.store, [chains.south.x[o.i], chains.south.z[o.i]], textPlane); }
   if (lm.stadium) { chains.north.project(lm.stadium[0], lm.stadium[1], -1, o); stadium(scene, lm.stadium[0], lm.stadium[1], Math.atan2(o.dx, o.dz), addGlow); }
   if (shukhov) shukhovTower(scene, shukhov[0], shukhov[1]);

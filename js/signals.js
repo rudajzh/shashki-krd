@@ -2,9 +2,10 @@
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
 // Один ряд перед каждой стоп-линией остаётся пустым (free): по нему игрок всегда может подъехать первым.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=13';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=14';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
+const CROSS_V = 13; // скорость машин на поперечной улице, м/с
 const COLORS = { g: [0.2, 1, 0.45], y: [1, 0.75, 0.1], r: [1, 0.12, 0.08] };
 
 export class Signals {
@@ -22,6 +23,15 @@ export class Signals {
       groups.get(c.n).items.push(c);
     }
     this.groups = [...groups.values()];
+    // Улица может называться по-разному по разные стороны бульвара (Кузнечная — Калинина), но перекрёсток один:
+    // такие пары сливаем, иначе их светофоры живут каждый своей жизнью и поперечные машины едут на красный.
+    for (let i = 0; i < this.groups.length; i++) for (let j = this.groups.length - 1; j > i; j--) {
+      const a = this.groups[i], b = this.groups[j];
+      if (a.items.some((c) => c.ped) || b.items.some((c) => c.ped)) continue;
+      if (a.items.some((p) => b.items.some((q) => p.k === q.k))) continue;
+      if (Math.hypot(a.items[0].x - b.items[0].x, a.items[0].z - b.items[0].z) > 75) continue;
+      a.items.push(...b.items); this.groups.splice(j, 1);
+    }
     this.byChain = { north: [], south: [] };
     for (const g of this.groups) {
       let x = 0, z = 0;
@@ -31,6 +41,9 @@ export class Signals {
       const c0 = g.items[0];
       g.px = c0.dz; g.pz = -c0.dx;   // поперёк Красной
       g.ax = c0.dx; g.az = c0.dz;    // вдоль Красной
+      // где вдоль поперечной улицы лежат проезжие части Красной (их может быть две, через бульвар)
+      g.e0 = Infinity; g.e1 = -Infinity;
+      for (const c of g.items) { const e = (c.x - x) * g.px + (c.z - z) * g.pz; g.e0 = Math.min(g.e0, e - 10); g.e1 = Math.max(g.e1, e + 10); }
     }
     for (const k of ['north', 'south']) this.byChain[k].sort((a, b) => a.stop - b.stop);
     // огни: по одной светящейся точке на светофор
@@ -48,7 +61,7 @@ export class Signals {
     for (const g of this.groups) for (const c of g.items) this.groupOf.set(c, g);
     // машины поперечного движения: общий запас на все перекрёстки
     this.pool = [];
-    const kinds = ['solaris', 'rio', 'polo', 'solaris', 'rio', 'polo', 'lux', 'solaris'];
+    const kinds = ['solaris', 'rio', 'polo', 'solaris', 'rio', 'polo', 'lux', 'solaris', 'rio', 'polo', 'solaris', 'rio'];
     kinds.forEach((kind, i) => {
       const V = VEHICLES[kind], mesh = vehicleMesh(kind, V.colors[(i * 3) % 8], envMap);
       const head = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xfff0cf, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
@@ -167,25 +180,30 @@ export class Signals {
     const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
     for (const c of this.pool) {
       if (!c.busy) continue;
-      c.t += 10.5 * dt;
-      if (c.t > 75) { c.busy = false; c.mesh.visible = false; continue; }
+      c.t += CROSS_V * dt;
+      if (c.t > 85) { c.busy = false; c.mesh.visible = false; continue; }
       const g = c.g, k = c.t * c.dir;
       c.x = g.cx + g.px * k + g.ax * c.lane; c.z = g.cz + g.pz * k + g.az * c.lane;
       c.mesh.position.set(c.x, 0, c.z);
       c.mesh.rotation.y = Math.atan2(g.px * c.dir, g.pz * c.dir);
       const rx = player.x - c.x, rz = player.z - c.z;
-      if (rx * rx + rz * rz < 64 && overlap(rx, rz, fx, fz, pw.hl, pw.hw, g.px * c.dir, g.pz * c.dir, c.hl, c.hw)) { events.crash = { dx: g.px * c.dir, dz: g.pz * c.dir, v: 10.5 }; events.crashRel = Math.hypot(player.vx - g.px * c.dir * 10.5, player.vz - g.pz * c.dir * 10.5); }
+      if (rx * rx + rz * rz < 64 && overlap(rx, rz, fx, fz, pw.hl, pw.hw, g.px * c.dir, g.pz * c.dir, c.hl, c.hw)) { events.crash = { dx: g.px * c.dir, dz: g.pz * c.dir, v: CROSS_V }; events.crashRel = Math.hypot(player.vx - g.px * c.dir * CROSS_V, player.vz - g.pz * c.dir * CROSS_V); }
     }
   }
 
-  // три машины в каждую сторону; к началу красного они как раз подъезжают к Красной
+  // До трёх машин в каждую сторону. Выезжают на жёлтый с таким расчётом, чтобы на Красную попасть уже на её красный,
+  // а уйти с дальней проезжей части за секунду до её зелёного: поперечный поток едет только на свой зелёный.
   launch(g) {
-    let i = 0;
-    for (const dir of [1, -1]) for (const back of [62, 78, 96]) {
-      const c = this.pool.find((q) => !q.busy);
-      if (!c || i++ >= 6) return;
-      c.busy = true; c.g = g; c.dir = dir; c.t = -back; c.lane = dir * -2.2; // правостороннее движение
-      c.mesh.visible = true;
+    const tIn = YELLOW + 0.5, tOut = CYCLE - GREEN - 1.2;
+    for (const dir of [1, -1]) {
+      const e0 = dir > 0 ? g.e0 : -g.e1, e1 = dir > 0 ? g.e1 : -g.e0; // вход и выход вдоль своего пути
+      const first = CROSS_V * tIn - e0, last = CROSS_V * tOut - e1;
+      for (let back = first, n = 0; back <= last && n < 3; back += 15, n++) {
+        const c = this.pool.find((q) => !q.busy);
+        if (!c) return;
+        c.busy = true; c.g = g; c.dir = dir; c.t = -back; c.lane = dir * -2.2; // правостороннее движение
+        c.mesh.visible = true;
+      }
     }
   }
 }

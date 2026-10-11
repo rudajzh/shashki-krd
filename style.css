@@ -112,3 +112,8 @@ html { touch-action: none; }
 
 button.toggle { margin: 0 0 8px; padding: 9px; font-size: 14px; border-color: rgba(120, 230, 150, 0.55); color: #b9f5c8; }
 button.toggle.off { border-color: rgba(255, 255, 255, 0.22); color: rgba(255, 255, 255, 0.7); }
+
+.carpick { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 12px 0 -4px; }
+.carpick b { min-width: 120px; font-size: 17px; }
+.carpick button { width: 38px; height: 38px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.25); background: transparent; color: #fff; font: 600 22px/1 inherit; cursor: pointer; padding: 0 0 3px; }
+.carpick button:active { transform: scale(0.94); }

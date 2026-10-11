@@ -1,6 +1,6 @@
 // Машина игрока: детальная модель + её свет (габариты, стоп-сигналы, конус фар на асфальте, прожектор).
 import * as THREE from 'three';
-import { buildCar } from './cardetail.js?v=13';
+import { buildCar } from './cardetail.js?v=14';
 
 // конус света на асфальте: начинается у бампера, расширяется и гаснет вдаль
 function beamTexture() {
@@ -21,15 +21,15 @@ function beamTexture() {
   return t;
 }
 
-export function makePlayerCar(color, glowTex, envMap) {
-  const car = buildCar({ color, envMap });
+export function makePlayerCar(color, glowTex, envMap, spec) {
+  const car = buildCar({ spec, color, envMap });
   const { root, type: t } = car;
 
   // габариты и стоп-сигналы — светящиеся точки, как у потока
   const tailMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xc01008, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
   const tails = [-1, 1].map((s) => {
     const sp = new THREE.Sprite(tailMat);
-    sp.position.set(s * 0.6, 0.875, -t.len / 2 - 0.03);
+    sp.position.set(s * t.tailX, t.tailY, -t.len / 2 - 0.03);
     sp.scale.setScalar(1.0);
     sp.renderOrder = 7;
     root.add(sp);

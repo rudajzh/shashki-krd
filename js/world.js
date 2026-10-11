@@ -2,8 +2,8 @@
 // и витринами, бульвар, фонари с пятнами света, светофоры, ограждения боковых улиц.
 // Отдаёт проверки столкновений: со зданиями (hitsSolid) и с бордюром (offRoad).
 import * as THREE from 'three';
-import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=13';
-import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=13';
+import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=14';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=14';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -259,6 +259,15 @@ export function buildWorld(data, scene) {
     return false;
   };
 
+  // точка у края дороги попадает в устье боковой улицы?
+  const inMouth = (k, x, z) => {
+    for (const c of crossings) {
+      if (c.k !== k || c.ped) continue;
+      const along = (x - c.x) * c.dx + (z - c.z) * c.dz;
+      if (Math.abs(along) < c.half + 2.5 && Math.hypot(x - c.x, z - c.z) < 40) return true;
+    }
+    return false;
+  };
   // точка лежит на асфальте связки у «Авроры»? (нужно раньше, чем связка нарисована)
   const nearLinkLate = (x, z) => {
     const L = data.link;
@@ -304,7 +313,8 @@ export function buildWorld(data, scene) {
     for (const sign of [1, -1]) {
       const open = new Uint8Array(n);
       const edgeAll = offsetLine(p, (i) => sign * (half(i) + 0.3));
-      for (let i = 0; i < n; i++) open[i] = onOther(i, sign) || nearLinkLate(edgeAll[i * 2], edgeAll[i * 2 + 1]) ? 1 : 0;
+      // на перекрёстке бордюра нет: там просто невидимая граница (съехать на боковую улицу всё равно нельзя)
+      for (let i = 0; i < n; i++) open[i] = onOther(i, sign) || nearLinkLate(edgeAll[i * 2], edgeAll[i * 2 + 1]) || inMouth(key, edgeAll[i * 2], edgeAll[i * 2 + 1]) ? 1 : 0;
       const skipSeg = (i) => open[i] || open[i + 1];
       dashed(mm, offsetLine(p, (i) => sign * lf[i] / 2 * LANE_W), 0.075, 0.08, line, 4, 0, skip);
       ribbon(cm, p, () => 0.16, 0.17, curb, (i) => sign * (half(i) + 0.16), skipSeg);
@@ -735,7 +745,7 @@ export function buildWorld(data, scene) {
     const ch = chains[c.k], oth = other[c.k];
     ch.at(c.s, o);
     const yaw = Math.atan2(o.dx, o.dz), hw = halfWidth(o.lf), lx = o.dz, lz = -o.dx, cx = o.x, cz = o.z;
-    for (const sign of c.ped || c.link ? [] : [-1, 1]) {
+    for (const sign of []) { // ограждений боковых улиц больше нет: граница невидимая
       const ex = cx + lx * sign * (hw + 1.1), ez = cz + lz * sign * (hw + 1.1);
       oth.project(ex, ez, -1, tmp);
       if (!tmp.past && Math.abs(tmp.lat) < halfWidth(tmp.lf) + 1.5) continue; // с этой стороны соседняя проезжая часть

@@ -26,6 +26,12 @@ export const CAR_SETUP = {
   steerFade: 0.4,    // насколько быстро угол уменьшается со скоростью
 };
 
+// Машины на выбор. Купе легче на руль, мощнее и цепче; седан тяжелее и спокойнее.
+export const CARS = {
+  sedan: { name: 'Седан', setup: CAR_SETUP, engine: 'v8' },
+  coupe: { name: 'Купе V10', setup: { ...CAR_SETUP, mass: 1560, inertia: 1180, a: 1.34, b: 1.31, grip: 3.5, power: 400000, driveForce: 16500, dragK: 0.4 }, engine: 'v10' },
+};
+
 // угол колёс, доступный на скорости u
 export const steerLockAt = (u, S = CAR_SETUP) => S.steerLock / (1 + S.steerFade * (u / 9) * (u / 9));
 

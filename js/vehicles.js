@@ -1,7 +1,7 @@
 // Машины потока: три бюджетных седана (в духе Solaris, Rio и Polo), седан бизнес-класса,
 // маршрутка-«пазик» и длинный городской автобус. Формы — те же кривые и сечения, что у машины игрока.
 import * as THREE from 'three';
-import { curve, COL, SEDAN, slab, commonDetails, buildMerged } from './cardetail.js?v=13';
+import { curve, COL, SEDAN, COUPE, slab, commonDetails, buildMerged } from './cardetail.js?v=14';
 
 // ---------- бюджетные седаны ----------
 // front: 'hex' — большая шестигранная решётка снизу, 'tiger' — узкая решётка между фарами, 'bars' — горизонтальные планки
@@ -144,6 +144,7 @@ export const VEHICLES = {
   rio: { spec: RIO, weight: 24, colors: [...BODY, TAXI] },
   polo: { spec: POLO, weight: 20, colors: [...BODY, TAXI] },
   lux: { spec: { ...SEDAN, blackRoof: false }, weight: 9, colors: [0x1b1c1f, 0x1b1c1f, 0xf2f2f0, 0x6b7077, 0x23395d] },
+  coupe: { spec: COUPE, weight: 0, colors: [0xd92b2b, 0xf0b400, 0xf2f2f0, 0x1f5fd0] }, // в обычном потоке не ездит — только гонщики
   paz: { spec: PAZ, weight: 12, colors: [0xf2f2f0, 0xf2f2f0, 0xf5c400, 0xf07f1a], behave: 'pushy', slow: 0.92 },
   bus: { spec: CITYBUS, weight: 9, colors: [0xf4f4f1], behave: 'bus', slow: 0.82 },
 };

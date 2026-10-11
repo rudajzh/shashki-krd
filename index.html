@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -59,6 +59,7 @@
   <div class="card">
     <h1>Шашки · Краснодар</h1>
     <p class="route">Красная по кругу: театр драмы ↔ «Аврора» · круг 5,5 км</p>
+    <div class="carpick"><button id="carPrev" aria-label="Предыдущая машина">‹</button><b id="carName">Седан</b><button id="carNext" aria-label="Следующая машина">›</button></div>
     <div class="swatches" id="swatches"></div>
     <button id="lightsBtn" class="ghost toggle">Светофоры: включены</button>
     <button id="go" class="primary">Поехали</button>
@@ -66,7 +67,7 @@
     <p class="best" id="best"></p>
     <a class="ghostlink" href="car.html">Посмотреть машину вблизи</a>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.13</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.14</p>
   </div>
 </div>
 
@@ -85,6 +86,6 @@
 </div>
 
 <button id="mute" aria-label="Звук">🔊</button>
-<script type="module" src="js/main.js?v=13"></script>
+<script type="module" src="js/main.js?v=14"></script>
 </body>
 </html>

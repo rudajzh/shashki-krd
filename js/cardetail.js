@@ -99,7 +99,7 @@ function section(S, z) {
   const y5 = sy - Math.min(0.165, span * 0.45), y6 = sy - Math.min(0.05, span * 0.15);
   return [
     [0, floor], [Math.min(0.6, sw - 0.3), floor], [w - 0.06, arch], [w - 0.028, lowY], [w, (lowY + y5) / 2], [w - 0.004, y5], [w - 0.016, y6], [sx, sy],
-    [sx - (sx - tw) * mix(0), sy + (top - sy) * mix(1)], [sx - (sx - tw) * mix(2), sy + (top - sy) * mix(3)], [tw, top - 0.02], [0, top],
+    [sx - (sx - tw) * mix(0), sy + (top - sy) * mix(1)], [sx - (sx - tw) * mix(2), sy + (top - sy) * mix(3)], [tw, top - (S.crown ?? 0.02)], [0, top],
   ];
 }
 const HALF = 12; // точек в половине сечения
@@ -239,6 +239,67 @@ export const SEDAN = {
   details: sportDetails,
 };
 
+// ---------- среднемоторное купе с V10 (вторая машина игрока) ----------
+function coupeDetails(S, P, paint, ends) {
+  const nose = ends.nose, tail = ends.tail, hl = S.len / 2;
+  const fy = Math.min(S.sy(hl), S.top(hl) - 0.035);
+  // широкая шестигранная решётка во весь нос и два воздухозаборника по краям
+  const hex = new THREE.Shape();
+  hex.moveTo(-0.36, -0.13); hex.lineTo(0.36, -0.13); hex.lineTo(0.47, 0.02); hex.lineTo(0.4, 0.13); hex.lineTo(-0.4, 0.13); hex.lineTo(-0.47, 0.02); hex.closePath();
+  P.add('dark', new THREE.ExtrudeGeometry(hex, { depth: 0.03, bevelEnabled: false }), 0x040405, 0, 0.36, nose - 0.012);
+  for (const y of [0.28, 0.33, 0.38, 0.43]) P.box('dark', 0x1b1d20, 0.78, 0.008, 0.035, 0, y, nose + 0.014);
+  P.box('dark', COL.chrome, 0.9, 0.012, 0.02, 0, 0.495, nose + 0.012);
+  P.pair((s) => {
+    P.add('dark', slab(0.3, 0.2, 0.05, 0.03), 0x040405, s * 0.7, 0.33, nose - 0.02);                  // боковой воздухозаборник
+    for (const y of [0.29, 0.35]) P.box('dark', 0x1b1d20, 0.26, 0.012, 0.04, s * 0.7, y, nose + 0.002);
+    P.add('light', slab(0.3, 0.035, 0.012, 0.03), 0xf4f8ff, s * 0.62, fy - 0.06, nose - 0.012);       // узкая полоска фары
+    P.add('light', slab(0.16, 0.03, 0.01, 0.03), 0xdfe8ff, s * 0.55, fy - 0.105, nose - 0.006);
+    // «лезвие» за дверью — контрастная панель с воздухозаборником мотора
+    const bz = -0.66, bw = S.sw(bz);
+    P.box('dark', 0x0a0b0d, 0.014, 0.44, 0.36, s * (bw + 0.004), 0.58, bz);
+    P.box('dark', 0x030303, 0.02, 0.2, 0.2, s * (bw + 0.006), 0.5, bz + 0.02);
+    P.box('dark', 0x0a0b0d, 0.014, 0.2, 0.26, s * (S.tw(bz) + 0.2), 1.0, bz - 0.06, 0, s * 0.55);
+    // дверь: два шва, ручка, зеркало на ножке
+    for (const z of [0.66, -0.44]) { const y0 = S.by(z) + 0.1, y1 = S.sy(z) - 0.03; P.box('dark', 0x050506, 0.008, y1 - y0, 0.014, s * (S.sw(z) + 0.001), (y0 + y1) / 2, z); }
+    P.box('paint', paint, 0.02, 0.026, 0.18, s * (S.sw(-0.2) + 0.004), S.sy(-0.2) - 0.1, -0.2);
+    const mz = 0.5, my = S.sy(mz) + 0.1, mx = s * (S.sw(mz) + 0.12);
+    P.box('paint', paint, 0.19, 0.08, 0.075, mx, my, mz, s * 0.2);
+    P.box('dark', COL.trim, 0.12, 0.022, 0.05, s * (S.sw(mz) + 0.03), my - 0.05, mz + 0.01);
+    P.box('dark', COL.trim, 0.05, 0.055, 2.0, s * (S.sw(0) - 0.012), S.by(0) + 0.03, 0);              // порог
+  });
+  P.box('dark', COL.trim, 1.56, 0.026, 0.18, 0, 0.14, nose - 0.08);                                    // сплиттер
+  // корма: узкие фонари во всю ширину, чёрная сетка под ними, два больших патрубка, диффузор
+  const ry = Math.min(S.sy(-hl), S.top(-hl) - 0.035);
+  P.box('dark', 0x050506, 1.5, 0.15, 0.03, 0, ry - 0.2, tail + 0.012);
+  for (let i = -5; i <= 5; i++) P.box('dark', 0x16181b, 0.012, 0.13, 0.03, i * 0.13, ry - 0.2, tail - 0.002);
+  P.pair((s) => {
+    P.box('dark', 0x1a0506, 0.5, 0.075, 0.03, s * 0.52, ry - 0.06, tail);
+    P.box('light', 0xff2014, 0.46, 0.022, 0.03, s * 0.52, ry - 0.045, tail - 0.012);
+    P.box('light', 0xc8120c, 0.3, 0.016, 0.03, s * 0.6, ry - 0.078, tail - 0.012);
+    P.add('dark', slab(0.26, 0.11, 0.045, 0.1), COL.chrome, s * 0.5, 0.31, tail + 0.02);               // патрубок
+    P.add('dark', slab(0.22, 0.075, 0.035, 0.02), 0x020202, s * 0.5, 0.31, tail - 0.012);
+  });
+  P.box('dark', 0x050506, 1.3, 0.17, 0.08, 0, 0.2, tail + 0.04);
+  for (const x of [-0.3, -0.1, 0.1, 0.3]) P.box('dark', 0x1b1d20, 0.014, 0.14, 0.1, x, 0.2, tail + 0.04);
+  P.box('light', COL.plate, 0.52, 0.11, 0.012, 0, 0.45, tail - 0.004);
+  // жалюзи над мотором по краям заднего стекла и маленький спойлер
+  P.pair((s) => { for (const z of [-1.25, -1.42, -1.59]) P.box('dark', 0x08090a, 0.26, 0.012, 0.11, s * 0.5, S.top(z) + 0.004, z, 0, 0, -0.18); });
+  P.box('dark', COL.trim, 1.3, 0.022, 0.1, 0, S.top(-hl + 0.1) + 0.012, -hl + 0.1);
+}
+
+// 4,43 × 1,94 × 1,24 м, база 2,65 м: низкий короткий нос, кабина сдвинута вперёд, длинная покатая корма над мотором.
+export const COUPE = {
+  len: 4.43, wid: 1.94, wheel: 0.345, tyreW: 0.3, track: 0.83, axF: 1.25, axR: -1.4, belt: 0.8, tailY: 0.7, tailX: 0.62, crease: 58, plateY: 0.45, crown: 0.075, bulge: 0.09,
+  top: curve([[-2.215, 0.74], [-2.17, 0.86], [-2.0, 0.905], [-1.7, 0.955], [-1.3, 1.04], [-0.9, 1.14], [-0.5, 1.215], [-0.1, 1.24], [0.25, 1.215], [0.5, 1.12], [0.72, 0.98], [0.92, 0.87], [1.2, 0.815], [1.6, 0.775], [1.95, 0.72], [2.14, 0.67], [2.215, 0.6]]),
+  sw: curve([[-2.215, 0.82], [-2.1, 0.91], [-1.8, 0.965], [-1.4, 0.97], [-0.6, 0.95], [0.4, 0.945], [1.2, 0.96], [1.8, 0.94], [2.1, 0.88], [2.215, 0.78]]),
+  sy: curve([[-2.215, 0.71], [-2.0, 0.85], [-1.5, 0.9], [-0.6, 0.85], [0.6, 0.79], [1.3, 0.75], [1.9, 0.69], [2.215, 0.57]]),
+  tw: curve([[-2.215, 0.6], [-1.9, 0.72], [-1.3, 0.6], [-0.5, 0.47], [0.25, 0.47], [0.85, 0.7], [1.5, 0.68], [2.1, 0.62], [2.215, 0.52]]),
+  by: curve([[-2.215, 0.26], [-2.0, 0.2], [-1.7, 0.13], [1.7, 0.12], [2.05, 0.12], [2.215, 0.16]]),
+  cabin: [-1.7, 0.85], roof: [-0.5, 0.28], pillarB: [-0.5, -0.4], kink: -0.95, doors: [0.66, -0.44, -0.44],
+  headWrap: 0.26, tailWrap: 0.1,
+  details: coupeDetails,
+};
+
 // колесо: шина со скруглённым плечом, обод, спицы, тормозной диск. Ось — x, лицо — в сторону +x.
 export function wheelGeometry(R = 0.36, W = 0.285, simple = false) {
   const P = new Parts(), seg = simple ? 12 : 24;
@@ -335,7 +396,7 @@ export function buildCar({ spec = SEDAN, color = 0x15171a, envMap = null } = {})
     wheels.push({ pivot, mesh, front: z > 0, side: s });
     tris += wg.attributes.position.count / 3;
   }
-  return { root, chassis, wheels, mats, tris, type: { len: spec.len + 0.1, wid: spec.wid, wheel: spec.wheel, belt: spec.belt } };
+  return { root, chassis, wheels, mats, tris, type: { len: spec.len + 0.1, wid: spec.wid, wheel: spec.wheel, belt: spec.belt, tailY: spec.tailY ?? 0.875, tailX: spec.tailX ?? 0.6 } };
 }
 
 // Машина потока: всё одним куском с цветами в вершинах (один вызов отрисовки), колёса не крутятся.
