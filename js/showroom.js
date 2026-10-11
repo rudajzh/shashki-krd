@@ -1,7 +1,7 @@
 // Витрина одной машины: медленно крутится, пальцем или мышью можно вращать и приближать.
 import * as THREE from 'three';
-import { buildCar, nightEnvironment, COUPE } from './cardetail.js?v=17';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=17';
+import { buildCar, nightEnvironment, COUPE } from './cardetail.js?v=18';
+import { VEHICLES, vehicleMesh, GELIK, PRIORA, CLASSIC } from './vehicles.js?v=18';
 
 const COLORS = [0x1f5fd0, 0x101214, 0xd92b2b, 0xf2f2f0, 0x6d7278, 0x1f9d55, 0xf0b400];
 const canvas = document.getElementById('view');
@@ -35,27 +35,29 @@ floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
 let color = COLORS[0];
-const car = buildCar({ color, envMap }), car2 = buildCar({ spec: COUPE, color, envMap }); // обе машины игрока — в полной детализации
+// машины игрока — в полной детализации (строятся, когда на них переключаются)
+const MINE = { player: undefined, coupe: COUPE, gelik: GELIK, lada: PRIORA, seven: CLASSIC }, built = {};
+const mine = (k) => built[k] || (built[k] = buildCar({ spec: MINE[k], color, envMap }));
+const car = mine('player');
 scene.add(car.root);
 // кроме машины игрока можно посмотреть любую машину потока — в том виде, в каком она едет в игре
-const NAMES = { player: 'Седан', coupe: 'Купе V10', solaris: 'Седан А', rio: 'Седан Б', polo: 'Седан В', lux: 'Бизнес', paz: 'Маршрутка', bus: 'Автобус' };
+const NAMES = { player: 'Седан', coupe: 'Купе V10', gelik: 'Гелик', lada: 'Лада', seven: 'Семёрка', solaris: 'Седан А', rio: 'Седан Б', polo: 'Седан В', lux: 'Бизнес', paz: 'Маршрутка', bus: 'Автобус' };
 let shown = car.root, kind = 'player';
 function show(k) {
   kind = k;
   scene.remove(shown);
-  const mine = k === 'player' || k === 'coupe';
-  if (mine) shown = k === 'coupe' ? car2.root : car.root;
+  const own = k in MINE;
+  if (own) { shown = mine(k).root; mine(k).mats.paint.color.setHex(color); }
   else { const V = VEHICLES[k]; shown = vehicleMesh(k, V.colors.includes(color) ? color : V.colors[0], envMap); }
   scene.add(shown);
-  const len = k === 'player' ? 5 : VEHICLES[k].spec.len;
-  if (k === 'coupe') shown.position.y = 0;
+  const len = own ? (MINE[k] ? MINE[k].len : 5) : VEHICLES[k].spec.len;
   view.dist = Math.max(8.2, len * 1.75); view.look = k === 'bus' || k === 'paz' ? 1.4 : 0.62;
-  shadow.scale.set((k === 'player' ? 1.9 : VEHICLES[k].spec.wid) / 1.9, len / 5, 1);
+  shadow.scale.set((own ? (MINE[k] ? MINE[k].wid : 1.9) : VEHICLES[k].spec.wid) / 1.9, len / 5, 1);
   let tris = 0, parts = 0;
   shown.traverse((o) => { if (o.isMesh) { parts++; tris += o.geometry.attributes.position.count / 3; } });
   document.getElementById('info').textContent = `${Math.round(tris).toLocaleString('ru-RU')} треугольников, ${parts} ${parts === 1 ? 'вызов' : 'вызовов'} отрисовки`;
   for (const b of document.getElementById('kinds').children) b.classList.toggle('sel', b.dataset.k === k);
-  document.getElementById('sw').style.visibility = mine ? 'visible' : 'hidden';
+  document.getElementById('sw').style.visibility = own ? 'visible' : 'hidden';
 }
 // мягкая тень под кузовом
 const sc = document.createElement('canvas');
@@ -73,7 +75,7 @@ COLORS.forEach((c) => {
   const b = document.createElement('button');
   b.style.background = '#' + c.toString(16).padStart(6, '0');
   b.classList.toggle('sel', c === color);
-  b.addEventListener('click', () => { color = c; car.mats.paint.color.setHex(c); car2.mats.paint.color.setHex(c); for (const o of sw.children) o.classList.toggle('sel', o === b); });
+  b.addEventListener('click', () => { color = c; for (const k in built) built[k].mats.paint.color.setHex(c); for (const o of sw.children) o.classList.toggle('sel', o === b); });
   sw.append(b);
 });
 // камера: вращение пальцем, приближение щипком или колесом

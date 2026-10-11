@@ -1,19 +1,20 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=17';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=17';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=17';
-import { makePlayerCar } from './playercar.js?v=17';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=17';
-import { Traffic } from './traffic.js?v=17';
-import { Input } from './input.js?v=17';
-import { Sound } from './audio.js?v=17';
-import { Loop } from './loop.js?v=17';
-import { Smoke } from './smoke.js?v=17';
-import { Signals } from './signals.js?v=17';
-import { Rain } from './weather.js?v=17';
-import { Chase } from './chase.js?v=17';
-import { Streaks } from './streaks.js?v=17';
-import { SpeedBlur } from './post.js?v=17';
+import { buildWorld } from './world.js?v=18';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=18';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=18';
+import { makePlayerCar } from './playercar.js?v=18';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=18';
+import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=18';
+import { Traffic } from './traffic.js?v=18';
+import { Input } from './input.js?v=18';
+import { Sound } from './audio.js?v=18';
+import { Loop } from './loop.js?v=18';
+import { Smoke } from './smoke.js?v=18';
+import { Signals } from './signals.js?v=18';
+import { Rain } from './weather.js?v=18';
+import { Chase } from './chase.js?v=18';
+import { Streaks } from './streaks.js?v=18';
+import { SpeedBlur } from './post.js?v=18';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -61,10 +62,10 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=17')).json();
+const data = await (await fetch('data/krasnaya.json?v=18')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
-const SPECS = { sedan: SEDAN, coupe: COUPE };
+const SPECS = { sedan: SEDAN, coupe: COUPE, gelik: GELIK, lada: PRIORA, seven: CLASSIC };
 let carId = store.get('car', 'sedan'); // на какой машине ездим
 if (!CARS[carId]) carId = 'sedan';
 const car = new Car(CARS[carId].setup);
@@ -79,6 +80,31 @@ const loop = new Loop(world, data);
 traffic.clearRows = [{ key: 'north', s0: loop.linkS - 330, s1: loop.linkS + 40, side: 1 }, { key: 'south', s0: loop.southS - 300, s1: loop.southS + 20, side: -1 }];
 const smoke = new Smoke(scene);
 const streaks = new Streaks(scene);
+const spray = new Smoke(scene, 260, 0xb9d0ea); // водяная пыль из-под колёс в дождь
+// Лужи: блестящие пятна на асфальте, видны только в дождь. Проехал по луже — всплеск.
+const puddles = { north: [], south: [] };
+{
+  let sd = 9001;
+  const rr = () => (sd = (sd * 16807) % 2147483647) / 2147483647, o = {}, list = [];
+  for (const key of ['north', 'south']) {
+    const ch = world.chains[key];
+    for (let s = 40 + rr() * 30; s < ch.total - 30; s += 18 + rr() * 26) {
+      ch.at(s, o);
+      if (world.crossings.some((c) => c.k === key && Math.abs(c.s - s) < c.half + 8)) continue;
+      const lat = (rr() - 0.5) * (o.lf * LANE_W - 2.2), rx = 0.9 + rr() * 1.3, rz = 1.3 + rr() * 2.4;
+      puddles[key].push({ s, lat, r: Math.max(rx, rz) });
+      list.push([o.x + o.dz * lat, o.z - o.dx * lat, Math.atan2(o.dx, o.dz), rx, rz]);
+    }
+  }
+  const geo = new THREE.CircleGeometry(1, 14);
+  geo.rotateX(-Math.PI / 2);
+  puddles.mat = new THREE.MeshBasicMaterial({ color: 0x8fb0dc, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -24 });
+  puddles.mesh = new THREE.InstancedMesh(geo, puddles.mat, list.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+  list.forEach(([x, z, yaw, rx, rz], i) => { m4.compose(new THREE.Vector3(x, 0.09, z), q.setFromAxisAngle(up, yaw), new THREE.Vector3(rx, 1, rz)); puddles.mesh.setMatrixAt(i, m4); });
+  puddles.mesh.frustumCulled = false; puddles.mesh.renderOrder = 5; puddles.mesh.visible = false;
+  scene.add(puddles.mesh);
+}
 const signals = new Signals(scene, world, world.glowTex, envMap);
 traffic.signals = signals;
 const rain = new Rain(scene);
@@ -497,8 +523,10 @@ function draw(dt) {
   model.root.position.set(car.x, 0, car.z);
   model.root.rotation.y = car.yaw;
   const k = Math.min(1, dt * 8);
-  G.roll += (Math.max(-0.07, Math.min(0.07, car.ay * 0.0055)) - G.roll) * k;
-  G.pitch += (Math.max(-0.045, Math.min(0.045, -car.ax * 0.004)) - G.pitch) * k;
+  // у каждой машины свой характер: купе стоит как вкопанное, «Гелик» и «Лады» заметно валятся в повороте и клюют носом
+  const feel = CARS[carId].feel, rollK = feel.roll;
+  G.roll += (Math.max(-0.05 * (1 + rollK * 0.55), Math.min(0.05 * (1 + rollK * 0.55), car.ay * 0.0055 * rollK)) - G.roll) * k;
+  G.pitch += (Math.max(-0.03 * (1 + rollK * 0.5), Math.min(0.03 * (1 + rollK * 0.5), -car.ax * 0.004 * Math.sqrt(rollK))) - G.pitch) * k;
   model.chassis.rotation.z = G.roll;
   model.chassis.rotation.x = G.pitch;
   G.wheelSpin += car.u / t.wheel * dt;
@@ -519,11 +547,12 @@ function draw(dt) {
   const cx = Math.sin(G.camYaw), cz = Math.cos(G.camYaw);
   // после аварии камера отъезжает вверх, чтобы не оказаться внутри чужой машины
   G.lift += ((G.state === 'crash' ? 1 : 0) - G.lift) * Math.min(1, dt * 3);
-  const driving = G.state === 'drive', spd = 1 - Math.exp(-v / 16);
+  // vs — скорость «по ощущению»: на «Семёрке» 90 км/ч подаются как почти 200 на купе
+  const driving = G.state === 'drive', vs = v * feel.sense, spd = 1 - Math.exp(-vs / 16);
   G.push += ((driving && !loop.active ? Math.max(-12, Math.min(9, car.ax)) : 0) - G.push) * Math.min(1, dt * 3.2); // тяга и торможение, сглаженные
   G.bank += ((driving ? Math.max(-0.05, Math.min(0.05, -car.ay * 0.0028)) : 0) - G.bank) * Math.min(1, dt * 4);
   G.shake *= Math.exp(-dt * 4);
-  const now = performance.now() / 1000, sk = Math.min(1, v / 52) ** 2;
+  const now = performance.now() / 1000, sk = Math.min(1, vs / 52) ** 2 * feel.shake;
   const jx = (Math.sin(now * 31.7) + Math.sin(now * 47.3 + 1.3)) * 0.5, jy = (Math.sin(now * 39.1 + 0.7) + Math.sin(now * 57.9)) * 0.5; // дрожь — плавная, а не случайный шум
   // В меню камера медленно обходит машину спереди; на старте плавно перелетает на своё место.
   const oa = car.yaw + 0.75 + Math.sin(now * 0.25) * 0.35;
@@ -600,13 +629,39 @@ function draw(dt) {
     const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), lx = fz, lz = -fx;
     for (const s of [-1, 1]) if (Math.random() < car.slip * 0.9) smoke.emit(car.x - fx * 1.4 + lx * s * 0.8, 0.25, car.z - fz * 1.4 + lz * s * 0.8, car.vx * 0.25, car.vz * 0.25, car.slip);
   }
+  // тормозим в пол на скорости — шины визжат и дымят; в дождь вместо дыма летит вода
+  const hardBrake = G.state === 'drive' && !loop.active && inp.brake > 0 && v > 9 ? Math.min(1, (v - 9) / 24) : 0;
+  if (hardBrake > 0.15 || (rain.wet > 0.25 && G.state === 'drive' && v > 7)) {
+    const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw), lx = fz, lz = -fx, wet = rain.wet;
+    for (const s of [-1, 1]) {
+      if (hardBrake > 0.15 && wet < 0.5 && Math.random() < hardBrake * 0.6) smoke.emit(car.x + fx * 1.3 + lx * s * 0.8, 0.2, car.z + fz * 1.3 + lz * s * 0.8, car.vx * 0.3, car.vz * 0.3, hardBrake * 0.55);
+      // водяная пыль за задними колёсами: чем быстрее, тем гуще; на торможении — ещё и из-под передних
+      if (wet > 0.25) for (let n = Math.random() < Math.min(1, v / 22) ? (v > 30 ? 2 : 1) : 0; n > 0; n--) spray.emit(car.x - fx * 1.9 + lx * s * 0.8, 0.25, car.z - fz * 1.9 + lz * s * 0.8, car.vx * 0.45, car.vz * 0.45, wet * 0.42);
+      if (wet > 0.25 && hardBrake > 0.2 && Math.random() < 0.7) spray.emit(car.x + fx * 1.4 + lx * s * 0.8, 0.2, car.z + fz * 1.4 + lz * s * 0.8, car.vx * 0.5, car.vz * 0.5, wet * 0.5);
+    }
+  }
+  if (rain.wet > 0.25) {
+    // машины потока поблизости тоже поднимают воду
+    for (const c of traffic.cars) if ((c.active || c.entering) && c.v > 6 && Math.random() < 0.3 && Math.abs(c.x - car.x) + Math.abs(c.z - car.z) < 90) spray.emit(c.x - c.dx * c.hl, 0.25, c.z - c.dz * c.hl, c.dx * c.v * 0.4, c.dz * c.v * 0.4, rain.wet * 0.35);
+    // лужи
+    const key = traffic.only, p = traffic.proj[key];
+    if (G.state === 'drive' && v > 6 && p.d < 12) for (const pd of puddles[key]) {
+      if (Math.abs(pd.s - p.s) > pd.r + 1.5 || Math.abs(pd.lat - p.lat) > pd.r * 0.7 + 0.8) continue;
+      if (pd.hit === G.time) continue;
+      if (!(G.time - (pd.at || -9) < 0.8)) { sound.splash(); const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw); for (let n = 0; n < 14; n++) spray.emit(car.x + (Math.random() - 0.5) * 1.8 + fx, 0.3, car.z + (Math.random() - 0.5) * 1.8 + fz, car.vx * 0.5 + (Math.random() - 0.5) * 6, car.vz * 0.5 + (Math.random() - 0.5) * 6, 1); }
+      pd.at = G.time;
+    }
+  }
+  puddles.mesh.visible = rain.wet > 0.03;
+  puddles.mat.opacity = rain.wet * 0.2;
+  spray.update(dt, camera, renderer.domElement.height);
   smoke.update(dt, camera, renderer.domElement.height);
-  streaks.update(camera.position, G.camYaw, G.state === 'drive' ? v : 0);
+  streaks.update(camera.position, G.camYaw, G.state === 'drive' ? v * CARS[carId].feel.sense : 0);
   sound.weather(rain.wet, chase.active && G.state === 'drive' ? Math.max(0, 1 - chase.gap / 200) : 0);
   $('cops').style.opacity = chase.active && G.state === 'drive' && chase.gap < 90 ? (0.55 * (1 - chase.gap / 90) * (Math.floor(chase.flash * 5) % 2 ? 1 : 0.35)).toFixed(2) : '0';
   $('cops').classList.toggle('blue', Math.floor(chase.flash * 5) % 2 === 0);
-  sound.update(car.rpm, G.state === 'drive' ? (G.launch.rev ? 1 : inp.throttle) : 0, car.slip, v, G.state === 'drive', car.gear);
-  blur.render(scene, camera, driving && !G.freeCam ? Math.min(1, Math.max(0, (v - 9) / 38) + Math.max(0, G.push) * 0.035) : 0, dt);
+  sound.update(car.rpm, G.state === 'drive' ? (G.launch.rev ? 1 : inp.throttle) : 0, Math.max(car.slip, hardBrake * (0.75 - 0.5 * rain.wet)), v, G.state === 'drive', car.gear);
+  blur.render(scene, camera, driving && !G.freeCam ? Math.min(1, Math.max(0, (v * CARS[carId].feel.sense - 9) / 38) + Math.max(0, G.push) * 0.035) : 0, dt);
 }
 
 let last = performance.now(), clockAt = 0;

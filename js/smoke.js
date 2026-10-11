@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 
 export class Smoke {
-  constructor(scene, count = 180) {
+  constructor(scene, count = 180, color = 0xc9ccd2) {
     this.n = count; this.next = 0;
     this.pos = new Float32Array(count * 3);
     this.size = new Float32Array(count);
@@ -14,7 +14,7 @@ export class Smoke {
     g.setAttribute('size', new THREE.BufferAttribute(this.size, 1));
     g.setAttribute('alpha', new THREE.BufferAttribute(this.alpha, 1));
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { uScale: { value: 600 }, uColor: { value: new THREE.Color(0xc9ccd2) } },
+      uniforms: { uScale: { value: 600 }, uColor: { value: new THREE.Color(color) } },
       vertexShader: 'attribute float size; attribute float alpha; varying float vA; uniform float uScale;\nvoid main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = size * uScale / max(0.5, -mv.z); gl_Position = projectionMatrix * mv; vA = alpha; }',
       fragmentShader: 'varying float vA; uniform vec3 uColor;\nvoid main(){ float d = length(gl_PointCoord - 0.5) * 2.0; float a = smoothstep(1.0, 0.15, d) * vA; if (a < 0.004) discard; gl_FragColor = vec4(uColor, a); }',
       transparent: true, depthWrite: false,

@@ -9,6 +9,10 @@
 // Для седана — V8: главная 4-я гармоника и сильные неровные «полуторные», которые дают бурление.
 const ENGINES = {
   v10: { order: 2.5, rev: 1.15, main: [1, 0.7, 0.36, 0.2, 0.16, 0.1, 0.08, 0.06, 0.05, 0.04], half: [0.3, 0.35, 0.12, 0.12, 0, 0.16, 0.2, 0.18, 0.12, 0, 0.1, 0.08], top: [1, 0.5, 0.28, 0.15], topGain: 1.0, lp: [900, 0.55, 2600], noise: [1900, 0.6], drive: 2.4 },
+  // четыре цилиндра «Лады»: главная — 2-я гармоника, звук суше и жужжит
+  i4: { order: 2, rev: 1.0, main: [1, 0.62, 0.45, 0.3, 0.2, 0.14, 0.1, 0.07], half: [0.12, 0.3, 0.16, 0, 0.1, 0.18, 0.08], top: [1, 0.5, 0.3], topGain: 0.5, lp: [450, 0.5, 1700], noise: [1500, 0.34], drive: 3.4, smp: 0.3 },
+  // большой V8 внедорожника: тот же строй, но ниже и с тяжёлым рокотом
+  v8low: { order: 4, rev: 0.76, main: [1, 0.55, 0.34, 0.2, 0.12, 0.08, 0.05, 0.04], half: [0.16, 0.3, 0.45, 0.6, 0.36, 0.5, 0.3, 0, 0.18, 0.14], top: [1, 0.4, 0.2], topGain: 0.25, lp: [420, 0.36, 1600], noise: [1100, 0.46], drive: 3.2, smp: 1.4 },
   v8: { order: 4, rev: 0.92, main: [1, 0.5, 0.3, 0.18, 0.1, 0.07, 0.05, 0.04], half: [0.1, 0.22, 0.35, 0.5, 0.3, 0.42, 0.25, 0, 0.15, 0.12], top: [1, 0.4, 0.2], topGain: 0.35, lp: [500, 0.4, 1800], noise: [1300, 0.4], drive: 3.0 },
 };
 
@@ -57,8 +61,8 @@ export class Sound {
       src.connect(g); g.connect(this.master); src.start();
       this.smp[name] = { src, g };
     }).catch(() => { /* нет файла или формат не поддержан — остаёмся на синтезе */ });
-    sample('idle', 'assets/sound/v8-idle.wav?v=17');
-    sample('squeal', 'assets/sound/tire-squeal.wav?v=17');
+    sample('idle', 'assets/sound/v8-idle.wav?v=18');
+    sample('squeal', 'assets/sound/tire-squeal.wav?v=18');
     this.rainN = loop('highpass', 2600, 0.4);
     // сирена патруля: тон, который «качается» между двумя нотами
     this.sirenO = ctx.createOscillator(); this.sirenO.type = 'square'; this.sirenO.frequency.value = 700;
@@ -117,7 +121,7 @@ export class Sound {
     if (this.smp.idle) {
       const fade = Math.max(0.2, Math.min(1, 1 - (rpm - 2200) / 3800));
       this.smp.idle.src.playbackRate.setTargetAtTime(Math.max(0.6, Math.min(5, rpm * E.rev / 1020)), t, 0.03);
-      this.smp.idle.g.gain.setTargetAtTime(active ? fade * (0.1 + 0.1 * throttle) * (this.kind === 'v8' ? 1 : 0.6) : 0, t, 0.07);
+      this.smp.idle.g.gain.setTargetAtTime(active ? fade * (0.1 + 0.1 * throttle) * (E.smp ?? (this.kind === 'v8' ? 1 : 0.6)) : 0, t, 0.07);
     }
     if (this.smp.squeal) {
       this.smp.squeal.src.playbackRate.setTargetAtTime(0.5 + speed * 0.0045, t, 0.1);
@@ -200,6 +204,7 @@ export class Sound {
     src.connect(g); g.connect(this.master); src.start(t); src.stop(t + 1);
   }
 
+  splash() { this.burst(1400, 0.6, 0.45, 0.28, 0.5); } // проехали лужу
   flash() { this.burst(2600, 5, 0.35, 0.05); setTimeout(() => this.burst(2600, 5, 0.35, 0.05), 140); }
   whoosh() { this.burst(900, 1.2, 0.5, 0.35, 0.35); }
   crash() { this.burst(180, 0.6, 1.4, 0.7, 0.4); this.burst(2400, 0.8, 0.5, 0.25, 0.5); }
