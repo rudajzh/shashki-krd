@@ -1,7 +1,8 @@
-// Светофоры. До третьего круга всегда зелёный. Потом на каждом перекрёстке цикл: зелёный → жёлтый → красный;
+// Светофоры (их можно выключить в меню). На каждом перекрёстке цикл: зелёный → жёлтый → красный;
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
+// Один ряд перед каждой стоп-линией остаётся пустым (free): по нему игрок всегда может подъехать первым.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=12';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=13';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
 const COLORS = { g: [0.2, 1, 0.45], y: [1, 0.75, 0.1], r: [1, 0.12, 0.08] };
@@ -9,6 +10,7 @@ const COLORS = { g: [0.2, 1, 0.45], y: [1, 0.75, 0.1], r: [1, 0.12, 0.08] };
 export class Signals {
   constructor(scene, world, glowTex, envMap) {
     this.enabled = false;
+    this.nx = { it: null, d: 0 };
     this.time = 0;
     this.barriers = world.barriers;
     // перекрёстки одной улицы на обеих проезжих частях переключаются вместе
@@ -23,7 +25,8 @@ export class Signals {
     this.byChain = { north: [], south: [] };
     for (const g of this.groups) {
       let x = 0, z = 0;
-      for (const c of g.items) { x += c.x / g.items.length; z += c.z / g.items.length; this.byChain[c.k].push({ stop: c.s - c.half - 7, g }); }
+      for (const c of g.items) { x += c.x / g.items.length; z += c.z / g.items.length; this.byChain[c.k].push({ stop: c.stopS, g, key: c.k, free: -1, greenT: -99 }); }
+      g.cross = g.items.some((c) => !c.ped && !c.link); // есть ли боковая улица, с которой выезжают машины
       g.cx = x; g.cz = z;
       const c0 = g.items[0];
       g.px = c0.dz; g.pz = -c0.dx;   // поперёк Красной
@@ -63,7 +66,43 @@ export class Signals {
   setEnabled(on) {
     this.enabled = on;
     for (const b of this.barriers) b.visible = !on; // боковые улицы открываются: теперь оттуда едут
-    if (!on) { for (const g of this.groups) g.state = 'g'; for (const c of this.pool) { c.busy = false; c.mesh.visible = false; } this.paint(); }
+    if (!on) { for (const g of this.groups) g.state = 'g'; for (const c of this.pool) { c.busy = false; c.mesh.visible = false; } this.paint(); return; }
+    for (const g of this.groups) { const u = (this.time + g.off) % CYCLE; g.state = u < GREEN ? 'g' : u < GREEN + YELLOW ? 'y' : 'r'; }
+    for (const k of ['north', 'south']) for (const it of this.byChain[k]) { it.greenT = -99; it.free = it.g.state === 'g' ? -1 : this.pickFree(it); }
+    this.paint();
+  }
+
+  // первый светофор впереди — только что загоревшийся зелёный (чтобы заезд не начинался со стоянки)
+  calm(key, s) {
+    for (const it of this.byChain[key]) {
+      if (it.stop < s) continue;
+      const u = (this.time + it.g.off) % CYCLE;
+      it.g.off += 1 - u; it.g.state = 'g'; it.free = -1;
+      break;
+    }
+    this.paint();
+  }
+
+  // какой ряд у этой стоп-линии оставить пустым: тот, где меньше всего машин уже не успевает проскочить;
+  // при равенстве — ближайший к ряду игрока
+  pickFree(it) {
+    const T = this.traffic;
+    if (!T) return -1;
+    const c = T.chains[it.key], o = T.tmp;
+    c.at(Math.max(1, it.stop - 3), o);
+    const lanes = o.lanes, count = new Array(lanes).fill(0);
+    for (const car of T.cars) {
+      if (!car.active || car.key !== it.key) continue;
+      const d = it.stop - car.s - car.hl;
+      if (d < -2 || d > 170 || car.lane >= lanes) continue;
+      if (car.stalled) count[car.lane] += 50;
+      else if (d > car.v * 3 + 6) count[car.lane] += 1 + (d < 60 ? 2 : 0); // чем ближе к линии, тем труднее ей уйти из ряда
+    }
+    const pr = T.proj[it.key];
+    const mine = pr && pr.facing > 0 && pr.d < 20 && it.stop - pr.s > 0 && it.stop - pr.s < 420 ? Math.max(0, Math.min(lanes - 1, Math.round(pr.lf / 2 - 0.5 - pr.lat / 3.5))) : 0;
+    let best = 0, bs = Infinity;
+    for (let l = 0; l < lanes; l++) { const sc = count[l] * 10 + Math.abs(l - mine); if (sc < bs) { bs = sc; best = l; } }
+    return best;
   }
 
   paint() {
@@ -72,17 +111,17 @@ export class Signals {
     this.geo.attributes.color.needsUpdate = true;
   }
 
-  // до какой скорости должна сбросить машина потока, чтобы встать у стоп-линии (front — где её передний бампер)
-  limit(key, front, v) {
-    if (!this.enabled) return Infinity;
+  // ближайшая стоп-линия впереди машины потока (front — где её передний бампер); дальше 230 м не смотрим
+  next(key, front) {
+    if (!this.enabled) return null;
     for (const it of this.byChain[key]) {
       const d = it.stop - front;
       if (d < -1.5) continue;
-      if (d > 90) break;
-      if (it.g.state === 'r' || (it.g.state === 'y' && d > v * 1.1)) return Math.sqrt(2 * 3.4 * Math.max(0, d - 1));
-      break;
+      if (d > 230) return null;
+      this.nx.it = it; this.nx.d = d;
+      return this.nx;
     }
-    return Infinity;
+    return null;
   }
 
   // ближайшая стоп-линия впереди на этой проезжей части: сколько до неё, какой там свет и сколько секунд до зелёного
@@ -91,7 +130,7 @@ export class Signals {
       const d = it.stop - front;
       if (d <= -2) continue;
       const u = (this.time + it.g.off) % CYCLE;
-      return { dist: d, state: this.enabled ? it.g.state : 'g', left: this.enabled && u >= GREEN ? CYCLE - u : 0, stop: it.stop, g: it.g };
+      return { dist: d, state: this.enabled ? it.g.state : 'g', left: this.enabled && u >= GREEN ? CYCLE - u : 0, stop: it.stop, g: it.g, free: it.free };
     }
     return null;
   }
@@ -111,12 +150,17 @@ export class Signals {
       const u = (this.time + g.off) % CYCLE, st = u < GREEN ? 'g' : u < GREEN + YELLOW ? 'y' : 'r';
       if (st === g.state) continue;
       g.state = st; changed = true;
+      for (const k of ['north', 'south']) for (const it of this.byChain[k]) {
+        if (it.g !== g) continue;
+        if (st === 'y') it.free = this.pickFree(it);
+        if (st === 'g') it.greenT = this.time;
+      }
       // на жёлтый с боковой улицы уже подкатывают машины — если перекрёсток рядом с игроком
-      if (st === 'y' && Math.hypot(g.cx - player.x, g.cz - player.z) < 320) this.launch(g);
+      if (st === 'y' && g.cross && Math.hypot(g.cx - player.x, g.cz - player.z) < 320) this.launch(g);
       // к красному в первом ряду встают гонщики — если перекрёсток впереди игрока и ещё не слишком близко
       if (st === 'y' && this.traffic) {
         const key = this.traffic.only, pr = this.traffic.proj[key];
-        for (const it of this.byChain[key]) if (it.g === g && it.stop - pr.s > 95 && it.stop - pr.s < 330) this.traffic.stageRacers(key, it.stop);
+        for (const it of this.byChain[key]) if (it.g === g && it.stop - pr.s > 95 && it.stop - pr.s < 330) this.traffic.stageRacers(key, it.stop, -1, it.free);
       }
     }
     if (changed) this.paint();

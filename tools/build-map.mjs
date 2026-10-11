@@ -23,6 +23,7 @@ const nodes = raw.elements.filter((e) => e.type === 'node');
 // ---------- две проезжие части Красной: сшиваем куски в цепочки ----------
 const street = ways.filter((w) => w.tags.name === STREET && /^(primary|secondary)$/.test(w.tags.highway));
 const usedInChains = new Set();
+const turnWays = { north: [], south: [] };
 
 function buildChain(northbound) {
   const set = street.filter((w) => (w.geometry.at(-1).lat > w.geometry[0].lat) === northbound);
@@ -75,6 +76,9 @@ function buildChain(northbound) {
   const pts = [], lanes = [];
   for (const w of best.chain) {
     usedInChains.add(w.id);
+    // стрелки на асфальте перед перекрёстком: в OSM это turn:lanes на подходе к нему
+    const tl = w.tags['turn:lanes'];
+    if (tl && /left|right/.test(tl)) turnWays[northbound ? 'north' : 'south'].push({ at: proj(w.geometry.at(-1)), t: tl.split('|').map((v) => (/left/.test(v) ? 'l' : '') + (/through|none/.test(v) || !v ? 't' : '') + (/right/.test(v) ? 'r' : '')) });
     const n = Math.max(1, +w.tags.lanes || 2);
     w.geometry.forEach((p, i) => {
       const q = proj(p);
@@ -264,6 +268,45 @@ for (const [key, c] of Object.entries(chains)) {
   }
 }
 
+// ---------- правки по схеме разметки Яндекс Карт (просмотрена вся улица на приближении 18–19) ----------
+// точка оси проезжей части на заданной широте (z)
+const chainAtZ = (c, z) => {
+  for (let j = 0; j < c.pts.length - 2; j += 2) {
+    const a = c.pts[j + 1], b = c.pts[j + 3];
+    if ((a - z) * (b - z) <= 0 && a !== b) { const t = (z - a) / (b - a); return [r1(c.pts[j] + (c.pts[j + 2] - c.pts[j]) * t), z]; }
+  }
+  return null;
+};
+// Курганный переулок — просто примыкание без светофора и перехода
+for (let i = crossings.length - 1; i >= 0; i--) if (/Курганный/.test(crossings[i].n)) crossings.splice(i, 1);
+const addCrossing = (n, k, z, c, extra = {}) => { const q = chainAtZ(chains[k], z); if (q) crossings.push({ n, k, x: q[0], z: q[1], c, ...extra }); else console.warn('нет точки для', n, k, z); };
+// площадь с фонтаном у арки объезжают два поперечных проезда: Бабушкина с севера и безымянный с юга
+if (!crossings.some((c) => c.k === 'north' && /Бабушкина/.test(c.n))) addCrossing('улица Бабушкина', 'north', 18, 'secondary');
+addCrossing('проезд у фонтана', 'north', 84, 'tertiary', { link: 1 });
+addCrossing('проезд у фонтана', 'south', 76, 'tertiary', { link: 1 });
+// Одесская упирается и в западную проезжую часть — там тоже светофор
+if (!crossings.some((c) => c.k === 'south' && /Одесская/.test(c.n))) addCrossing('Одесская улица', 'south', -443, 'tertiary');
+// пешеходные переходы со светофором посреди квартала (только на западной проезжей части)
+addCrossing('переход у «Шурика и Лиды»', 'south', 362, 'ped', { ped: 1 });
+addCrossing('переход у сквера Дзержинского', 'south', -885, 'ped', { ped: 1 });
+for (const c of crossings) {
+  if (/Северная|Хакурате|Гаврилова/.test(c.n)) c.box = 1; // жёлтая «вафельница» на обеих проезжих частях
+  // стрелки: ближайший кусок со стрелками, который кончается прямо перед этим перекрёстком
+  let best = null, bd = 45;
+  for (const w of turnWays[c.k]) {
+    const d = Math.hypot(w.at[0] - c.x, w.at[1] - c.z), before = c.k === 'north' ? w.at[1] >= c.z - 6 : w.at[1] <= c.z + 6;
+    if (before && d < bd) { bd = d; best = w; }
+  }
+  if (best) c.a = best.t;
+}
+// стрелки перед развилкой у «Авроры»: левые ряды уходят на Офицерскую (туда же — разворот)
+const arrows = [{ k: 'north', z: -1300, a: ['l', 'lr', 'r'] }].map((m) => ({ ...m, x: chainAtZ(chains[m.k], m.z)[0] }));
+// остановки с жёлтым зигзагом у правого бордюра: [проезжая часть, z середины, длина]
+const stops = [
+  ['south', 1241, 24], ['south', 783, 24], ['south', 555, 24], ['south', 120, 24], ['south', -416, 26], ['south', -732, 24], ['south', -1318, 30],
+  ['north', 1291, 24], ['north', 576, 24], ['north', 0, 24], ['north', -499, 24], ['north', -947, 30],
+].map(([k, z, len]) => { const q = chainAtZ(chains[k], z); return q ? { k, x: q[0], z, len } : null; }).filter(Boolean);
+
 // ---------- достопримечательности ----------
 const poi = JSON.parse(fs.readFileSync(new URL('data/raw-poi.json', root))).elements;
 const at = (e) => proj(e.center || e).map(r1);
@@ -292,11 +335,13 @@ landmarks.kubgtu = [-149, 604];
 // колокол-памятник святой Екатерине в большом фонтане перед аркой
 landmarks.bell = [-70, 47];
 
-const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks, turns, link };
+const out = { origin: [LAT0, LON0], chains, roads, buildings, greens, trees, signals, marks, crossings, landmarks, turns, link, stops, arrows };
 fs.writeFileSync(new URL('data/krasnaya.json', root), JSON.stringify(out));
 
 const chainLen = (c) => { let l = 0; for (let i = 2; i < c.pts.length; i += 2) l += Math.hypot(c.pts[i] - c.pts[i - 2], c.pts[i + 1] - c.pts[i - 1]); return Math.round(l); };
 console.log(`север: ${chainLen(chains.north)} м, юг: ${chainLen(chains.south)} м`);
 console.log(`дорог ${roads.length}, зданий ${buildings.length}, зелёных зон ${greens.length}, деревьев ${trees.length / 2}, светофоров ${signals.length / 2}`);
-console.log(`перекрёстков ${crossings.length}, арка ${landmarks.arch}, Аврора ${landmarks.avrora}, фонтанов ${landmarks.fountains.length}, зданий с названием ${buildings.filter((b) => b.n).length}`);
+console.log(crossings.map((c) => `${c.k[0]} ${c.n} z=${c.z} ${c.a ? c.a.join('|') : '—'}${c.box ? ' вафельница' : ''}`).join('\n'));
+console.log(`перекрёстков ${crossings.length}, остановок ${stops.length}, арка ${landmarks.arch}, Аврора ${landmarks.avrora}, фонтанов ${landmarks.fountains.length}, зданий с названием ${buildings.filter((b) => b.n).length}`);
 console.log(`размер ${(fs.statSync(new URL('data/krasnaya.json', root)).size / 1024).toFixed(0)} КБ`);
+if (process.argv.includes('--turns')) for (const k of ['north', 'south']) console.log(k, turnWays[k].map((w) => `${w.at.map(Math.round)}:${w.t.join('|')}`).join('  '));

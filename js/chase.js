@@ -1,8 +1,8 @@
 // Погоня. После полного круга с островка у театра драмы срывается патруль и садится на хвост.
 // Едешь быстро и проходишь впритирку — отрываешься; тормозишь — догоняют. Догнали — заезд окончен.
 import * as THREE from 'three';
-import { vehicleMesh } from './vehicles.js?v=12';
-import { halfWidth } from './chain.js?v=12';
+import { vehicleMesh } from './vehicles.js?v=13';
+import { halfWidth } from './chain.js?v=13';
 
 export class Chase {
   constructor(scene, world, glowTex, envMap, patrolZ) {

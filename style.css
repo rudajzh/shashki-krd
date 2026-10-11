@@ -109,3 +109,6 @@ html { touch-action: none; }
 .tip { animation: glow 0.45s ease-in-out infinite alternate; } /* не pulse: тот двигает transform и сбил бы центровку */
 @keyframes glow { from { box-shadow: 0 0 0 2px rgba(229, 83, 42, 0.5), 0 0 10px rgba(229, 83, 42, 0.3); } to { box-shadow: 0 0 0 2px rgba(229, 83, 42, 1), 0 0 30px rgba(229, 83, 42, 0.75); } }
 .pad button.launch { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.55), 0 0 30px 6px rgba(229, 83, 42, 0.8); }
+
+button.toggle { margin: 0 0 8px; padding: 9px; font-size: 14px; border-color: rgba(120, 230, 150, 0.55); color: #b9f5c8; }
+button.toggle.off { border-color: rgba(255, 255, 255, 0.22); color: rgba(255, 255, 255, 0.7); }

@@ -1,17 +1,17 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=12';
-import { Car, alignSteer, steerLockAt } from './car.js?v=12';
-import { LANE_W, laneOffset, halfWidth } from './chain.js?v=12';
-import { makePlayerCar } from './playercar.js?v=12';
-import { nightEnvironment } from './cardetail.js?v=12';
-import { Traffic } from './traffic.js?v=12';
-import { Input } from './input.js?v=12';
-import { Sound } from './audio.js?v=12';
-import { Loop } from './loop.js?v=12';
-import { Smoke } from './smoke.js?v=12';
-import { Signals } from './signals.js?v=12';
-import { Rain } from './weather.js?v=12';
-import { Chase } from './chase.js?v=12';
+import { buildWorld } from './world.js?v=13';
+import { Car, alignSteer, steerLockAt } from './car.js?v=13';
+import { LANE_W, laneOffset, halfWidth } from './chain.js?v=13';
+import { makePlayerCar } from './playercar.js?v=13';
+import { nightEnvironment } from './cardetail.js?v=13';
+import { Traffic } from './traffic.js?v=13';
+import { Input } from './input.js?v=13';
+import { Sound } from './audio.js?v=13';
+import { Loop } from './loop.js?v=13';
+import { Smoke } from './smoke.js?v=13';
+import { Signals } from './signals.js?v=13';
+import { Rain } from './weather.js?v=13';
+import { Chase } from './chase.js?v=13';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -57,11 +57,12 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=12')).json();
+const data = await (await fetch('data/krasnaya.json?v=13')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const car = new Car();
 let color = store.get('color', COLORS[0]);
+let lightsOn = store.get('lights', true); // играть со светофорами или без
 const envMap = nightEnvironment(renderer); // отражения ночной улицы на лаке и стёклах
 const model = makePlayerCar(color, world.glowTex, envMap); // детальная машина со своим светом
 scene.add(model.root);
@@ -141,7 +142,8 @@ function startRun() {
   placeAtStart();
   Object.assign(G, { state: 'drive', score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0, shake: 0, lap: START_LAP, grace: 0, turns: (START_LAP - 1) * 2, blend: 0, why: '' });
   traffic.density = densityFor(G.lap);
-  if (G.lap >= 3) signals.setEnabled(true);
+  signals.setEnabled(lightsOn); // светофоры — по выбору в меню, работают с первого круга
+  if (lightsOn) signals.calm('north', world.startS);
   if (G.turns > 0) { traffic.setStalled('north', stalledSpots('north', Math.min(3, Math.ceil(G.turns / 2)))); }
   loop.intro(car, world); // срываемся с площадки на дорогу
   $('menu').hidden = true; $('result').hidden = true; $('hud').hidden = false;
@@ -247,7 +249,8 @@ function tick(dt) {
   events.crash = null; events.near.length = 0; events.honk = false;
   traffic.update(dt, car, PW, events);
   signals.update(dt, car, PW, events);
-  if (events.honk && driving) sound.horn();
+  if (G.hornT > 0) G.hornT -= dt;
+  if (events.honk && driving && !(G.hornT > 0)) { sound.horn(); G.hornT = 0.9; }
   // дождь: мокрая дорога держит хуже, видно ближе
   if (rain.update(dt, car, driving && !loop.active) && driving) pop(rain.on ? 'Дождь — скользко' : 'Дождь кончился');
   car.gripK = 1 - 0.24 * rain.wet;
@@ -385,7 +388,7 @@ function roadAssist() {
 }
 
 // Разворот пройден: премия (за удержанный занос — больше). С каждым разворотом дорога сложнее:
-// появляются сломанные машины, с третьего круга включаются светофоры, после полного круга — погоня.
+// появляются сломанные машины, после полного круга — погоня.
 function turnDone(res) {
   traffic.release();
   traffic.clearNear(car.x, car.z, 30); // на выходе никто не должен стоять вплотную
@@ -403,8 +406,7 @@ function turnDone(res) {
   if (res.kind === 'south') {
     G.lap++;
     traffic.density = densityFor(G.lap);
-    if (G.lap >= 3 && !signals.enabled) { signals.setEnabled(true); pop(`${what} · круг ${G.lap} · светофоры!`); }
-    else pop(`${what} · круг ${G.lap} · +${bonus}`);
+    pop(`${what} · круг ${G.lap} · +${bonus}`);
     if (!chase.active) { chase.start(G.lap); sound.siren(1); }
   } else pop(`${what} · +${bonus}`);
 }
@@ -515,6 +517,9 @@ COLORS.forEach((c) => {
   });
   sw.append(b);
 });
+const paintLights = () => { $('lightsBtn').textContent = lightsOn ? 'Светофоры: включены' : 'Светофоры: выключены'; $('lightsBtn').classList.toggle('off', !lightsOn); };
+$('lightsBtn').addEventListener('click', () => { lightsOn = !lightsOn; store.set('lights', lightsOn); paintLights(); });
+paintLights();
 $('go').addEventListener('click', startRun);
 $('again').addEventListener('click', startRun);
 $('toMenu').addEventListener('click', showMenu);

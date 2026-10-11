@@ -2,8 +2,8 @@
 // и витринами, бульвар, фонари с пятнами света, светофоры, ограждения боковых улиц.
 // Отдаёт проверки столкновений: со зданиями (hitsSolid) и с бордюром (offRoad).
 import * as THREE from 'three';
-import { Chain, LANE_W, halfWidth } from './chain.js?v=12';
-import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=12';
+import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=13';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=13';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -235,8 +235,20 @@ export function buildWorld(data, scene) {
     const ch = chains[c.k];
     ch.project(c.x, c.z, -1, o);
     if (o.s < 30 || o.s > ch.total - 30) continue;
-    crossings.push({ n: c.n, k: c.k, cls: c.c, s: o.s, x: c.x, z: c.z, dx: o.dx, dz: o.dz, half: /primary|secondary/.test(c.c) ? 8 : 5.5 });
+    const half = c.ped ? 2.5 : /primary|secondary/.test(c.c) ? 8 : 5.5;
+    // ped — пешеходный переход посреди квартала, link — проезд через бульвар (боковой улицы нет)
+    crossings.push({ n: c.n, k: c.k, cls: c.c, s: o.s, x: c.x, z: c.z, dx: o.dx, dz: o.dz, half, ped: !!c.ped, link: !!c.link, box: !!c.box, a: c.a || null, stopS: c.ped ? o.s - 4.2 : o.s - half - 7 });
   }
+  // перед стоп-линией полосы разделены сплошной
+  const SOLID = 36;
+  const inSolid = (k, x, z) => {
+    for (const c of crossings) {
+      if (c.k !== k) continue;
+      const along = (x - c.x) * c.dx + (z - c.z) * c.dz, st = c.stopS - c.s;
+      if (along > st - SOLID && along < st + 0.5 && Math.hypot(x - c.x, z - c.z) < 70) return true;
+    }
+    return false;
+  };
   // точка внутри «коробки» перекрёстка этой проезжей части?
   const inCrossing = (k, x, z, pad = 0) => {
     for (const c of crossings) {
@@ -277,7 +289,7 @@ export function buildWorld(data, scene) {
         if (ok && from < 0) from = i;
         if (!ok && from >= 0) {
           const f0 = from;
-          if (i - f0 >= 2) dashed(mm, offsetLine(p.slice(f0 * 2, i * 2), (k) => (lf[f0 + k] / 2 - j) * LANE_W), 0.075, 0.08, line, 3, 6, skip);
+          if (i - f0 >= 2) dashed(mm, offsetLine(p.slice(f0 * 2, i * 2), (k) => (lf[f0 + k] / 2 - j) * LANE_W), 0.075, 0.08, line, 3, 6, (x, z) => skip(x, z) || inSolid(key, x, z));
           from = -1;
         }
       }
@@ -344,7 +356,37 @@ export function buildWorld(data, scene) {
     }
   }
 
-  // «зебры», стоп-линии и жёлтая «вафельница» на Северной
+  // «зебры», стоп-линии, сплошные и стрелки перед ними, жёлтые «вафельницы» — как на схеме разметки Яндекс Карт
+  const thick = (a, b, w, col) => { // отрезок толщиной w
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = (b[1] - a[1]) / l * w / 2, nz = -(b[0] - a[0]) / l * w / 2;
+    mm.flatQuad([a[0] + nx, a[1] + nz], [b[0] + nx, b[1] + nz], [b[0] - nx, b[1] - nz], [a[0] - nx, a[1] - nz], 0.08, col);
+  };
+  // стрелка в полосе: t — прямо, l — налево, r — направо (u — вперёд, v — влево)
+  const arrow = (ox, oz, dx, dz, kind) => {
+    const P = (u, v) => [ox + dx * u + dz * v, oz + dz * u - dx * v];
+    const head = (u, v, du, dv) => {
+      const a = P(u + du * 1.3, v + dv * 1.3), b = P(u - dv * 0.4, v + du * 0.4), c2 = P(u + dv * 0.4, v - du * 0.4);
+      mm.tri(a[0], 0.08, a[1], b[0], 0.08, b[1], c2[0], 0.08, c2[1], line);
+    };
+    const t = kind.includes('t');
+    thick(P(0, 0), P(t ? 2.9 : 2.1, 0), 0.17, line);
+    if (t) head(2.9, 0, 1, 0);
+    for (const [on, sg] of [[kind.includes('l'), 1], [kind.includes('r'), -1]]) {
+      if (!on) continue;
+      const u0 = t ? 1.4 : 2.0;
+      thick(P(u0, 0), P(u0 + 0.5, sg * 0.6), 0.17, line);
+      head(u0 + 0.5, sg * 0.6, 0.45, sg * 0.89);
+    }
+  };
+  const arrowRow = (ch, s, a) => {
+    if (s < 5) return;
+    ch.at(s, o);
+    const lanes = Math.max(1, Math.round(o.lf)), n = Math.min(a.length, lanes);
+    for (let j = 0; j < n; j++) {
+      const off = laneOffset(j, o.lf);
+      arrow(o.x + o.dz * off, o.z - o.dx * off, o.dx, o.dz, a[a.length === lanes ? j : j === n - 1 ? a.length - 1 : j]);
+    }
+  };
   for (const c of crossings) {
     const ch = chains[c.k];
     const cross = (s0, s1, col, fill) => { // полоса поперёк дороги от s0 до s1
@@ -361,15 +403,50 @@ export function buildWorld(data, scene) {
     const solid = (x, z, dx, dz, lx, lz, hw, len, col) => {
       mm.flatQuad([x - lx * hw, z - lz * hw], [x + lx * hw, z + lz * hw], [x + lx * hw + dx * len, z + lz * hw + dz * len], [x - lx * hw + dx * len, z - lz * hw + dz * len], 0.08, col);
     };
-    cross(c.s - c.half - 5.5, c.s - c.half - 1.5, line, zebra);
-    cross(c.s + c.half + 1.5, c.s + c.half + 5.5, line, zebra);
-    cross(c.s - c.half - 7.2, c.s - c.half - 6.8, line, solid);
-    if (/Северная/.test(c.n)) {
+    if (c.ped) cross(c.s - 2, c.s + 2, line, zebra);
+    else {
+      cross(c.s - c.half - 5.5, c.s - c.half - 1.5, line, zebra);
+      cross(c.s + c.half + 1.5, c.s + c.half + 5.5, line, zebra);
+    }
+    cross(c.stopS - 0.2, c.stopS + 0.2, line, solid);
+    if (c.box) {
       const grid = (x, z, dx, dz, lx, lz, hw, len, col) => {
         for (let a = -hw; a <= hw; a += 2.2) mm.flatQuad([x + lx * (a - 0.07), z + lz * (a - 0.07)], [x + lx * (a + 0.07), z + lz * (a + 0.07)], [x + lx * (a + 0.07) + dx * len, z + lz * (a + 0.07) + dz * len], [x + lx * (a - 0.07) + dx * len, z + lz * (a - 0.07) + dz * len], 0.08, col);
         for (let b = 0; b <= len; b += 2.2) mm.flatQuad([x - lx * hw + dx * (b - 0.07), z - lz * hw + dz * (b - 0.07)], [x + lx * hw + dx * (b - 0.07), z + lz * hw + dz * (b - 0.07)], [x + lx * hw + dx * (b + 0.07), z + lz * hw + dz * (b + 0.07)], [x - lx * hw + dx * (b + 0.07), z - lz * hw + dz * (b + 0.07)], 0.08, col);
       };
       cross(c.s - c.half + 1, c.s + c.half - 1, yellow, grid);
+    }
+    // сплошные между полосами на подходе
+    for (let j = 1; j <= 4; j++) {
+      let pts = [];
+      const flush = () => { if (pts.length >= 4) dashed(mm, pts, 0.075, 0.08, line, 4, 0); pts = []; };
+      for (let s = c.stopS - SOLID; s <= c.stopS + 0.01; s += 4) {
+        if (s < 2) continue;
+        ch.at(s, o);
+        if (o.lf - j < 0.5) { flush(); continue; }
+        const off = (o.lf / 2 - j) * LANE_W;
+        pts.push(o.x + o.dz * off, o.z - o.dx * off);
+      }
+      flush();
+    }
+    if (c.a) for (const back of [9, 27]) arrowRow(ch, c.stopS - back, c.a);
+  }
+  for (const m of data.arrows || []) {
+    const ch = chains[m.k];
+    ch.project(m.x, m.z, -1, tmp);
+    for (const back of [0, 24]) arrowRow(ch, tmp.s - back, m.a);
+  }
+  // остановки: жёлтый зигзаг вдоль правого края
+  for (const st of data.stops || []) {
+    const ch = chains[st.k];
+    ch.project(st.x, st.z, -1, tmp);
+    const s0 = tmp.s - st.len / 2;
+    let prev = null;
+    for (let k = 0; k <= Math.round(st.len / 1.5); k++) {
+      ch.at(s0 + k * 1.5, o);
+      const off = -(o.lf / 2 * LANE_W) + (k % 2 ? 1.05 : 0.3), pt = [o.x + o.dz * off, o.z - o.dx * off];
+      if (prev) thick(prev, pt, 0.12, yellow);
+      prev = pt;
     }
   }
 
@@ -658,14 +735,14 @@ export function buildWorld(data, scene) {
     const ch = chains[c.k], oth = other[c.k];
     ch.at(c.s, o);
     const yaw = Math.atan2(o.dx, o.dz), hw = halfWidth(o.lf), lx = o.dz, lz = -o.dx, cx = o.x, cz = o.z;
-    for (const sign of [-1, 1]) {
+    for (const sign of c.ped || c.link ? [] : [-1, 1]) {
       const ex = cx + lx * sign * (hw + 1.1), ez = cz + lz * sign * (hw + 1.1);
       oth.project(ex, ez, -1, tmp);
       if (!tmp.past && Math.abs(tmp.lat) < halfWidth(tmp.lf) + 1.5) continue; // с этой стороны соседняя проезжая часть
       barrier(ex, ez, yaw + Math.PI / 2, c.half * 2 + 2);
     }
     // светофор справа перед перекрёстком, горит зелёный
-    ch.at(c.s - c.half - 8.5, o);
+    ch.at(c.stopS - 1.5, o);
     const px = o.x - o.dz * (halfWidth(o.lf) + 0.9), pz = o.z + o.dx * (halfWidth(o.lf) + 0.9);
     put(inst.pole, px, 2.3, pz, 0); put(inst.head, px, 4.2, pz, Math.atan2(o.dx, o.dz));
     c.light = [px - o.dx * 0.25, 3.85, pz - o.dz * 0.25]; // сам огонь рисует модуль светофоров: он меняет цвет

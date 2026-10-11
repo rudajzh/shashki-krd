@@ -1,10 +1,13 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { laneOffset, halfWidth } from './chain.js?v=12';
-import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=12';
+import { laneOffset, halfWidth, LANE_W } from './chain.js?v=13';
+import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=13';
 
 const AHEAD = 520, BEHIND = 180;
+const LANES_FULL = 4.8; // при стольких рядах на дорогу выходит весь поток
+const NONE = [];
+const NUDGE = 2.7; // поправка скорости от «режиссёра», м/с: меньше разницы между рядами, чтобы не получалось езды вровень
 const OFF = [0, 0, 0], HEAD = [1.0, 0.93, 0.78], TAIL = [0.75, 0.04, 0.03], STOP = [1.0, 0.1, 0.06], BLINK = [1.0, 0.55, 0.05];
 
 export class Traffic {
@@ -13,18 +16,24 @@ export class Traffic {
     this.cars = [];
     this.time = 0;
     this.density = 1; // доля машин, которым разрешено выезжать: растёт с каждым кругом
+    this.eff = 1;     // она же с поправкой на число рядов там, где сейчас игрок
     this.only = 'north'; // поток едет только там, где едет игрок: встречную сторону почти не видно, незачем её считать
     this.proj = { north: { i: -1 }, south: { i: -1 } };
-    this.tmp = {};
+    this.tmp = {}; this.tmp2 = {};
     let seed = 12345;
     this.rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    this.ghost = { active: true, isPlayer: true, on: false, key: 'north', s: 0, off: 0, v: 0, hl: 2.5, hw: 0.95, latV: 0, lane: 0, nextLane: -1 };
+    this.dirT = 0;
+    // head — дистанция до передней машины в секундах, react — задержка перед троганием, acc — разгон: у каждого водителя свои
+    const blank = () => ({ active: false, s: 0, lane: 0, off: 0, v: 0, want: 0, x: 0, z: 0, dx: 0, dz: 1, prevLong: 0, changeIn: 0, blinkT: 0, blinkSide: 0, nextLane: -1, retry: 0, yieldT: 0, hurry: 0, braking: 0, latV: 0, honkT: 0,
+      nudge: 0, nudgeT: 0, nudgeAge: 0, nudgeCd: 0, nudgeHard: false, scare: 0, wait: 0, tStar: Infinity, evadeSlow: false, head: 1.3 + this.rnd() * 0.9, react: 0.25 + this.rnd() * 0.7, acc: 1.9 + this.rnd() * 1.0 });
     for (const key of ['north', 'south']) {
       for (let n = 0; n < counts[key]; n++) {
         const kind = pickKind(this.rnd), V = VEHICLES[kind], t = V.spec;
         const mesh = vehicleMesh(kind, V.colors[Math.floor(this.rnd() * V.colors.length)], envMap);
         mesh.visible = false;
         scene.add(mesh);
-        this.cars.push({ key, chain: chains[key], mesh, kind, behave: V.behave || '', slow: V.slow || 1, rank: this.rnd(), hl: t.len / 2 + (t.bulge ?? 0.05), hw: t.wid / 2, ly: t.belt, active: false, s: 0, lane: 0, off: 0, v: 0, want: 0, x: 0, z: 0, dx: 0, dz: 1, prevLong: 0, changeIn: 0, blinkT: 0, blinkSide: 0, nextLane: -1, retry: 0, yieldT: 0, hurry: 0, braking: 0, latV: 0, honkT: 0 });
+        this.cars.push({ key, chain: chains[key], mesh, kind, behave: V.behave || '', slow: V.slow || 1, rank: this.rnd(), hl: t.len / 2 + (t.bulge ?? 0.05), hw: t.wid / 2, ly: t.belt, ...blank() });
       }
     }
     // «гонщики»: ждут красный в первом ряду у стоп-линии, на зелёный срываются и уходят шашками
@@ -32,7 +41,7 @@ export class Traffic {
       const t = VEHICLES.lux.spec, mesh = vehicleMesh('lux', color, envMap);
       mesh.visible = false;
       scene.add(mesh);
-      this.cars.push({ key: 'north', chain: chains.north, mesh, kind: 'lux', racer: true, behave: 'racer', slow: 1, rank: 9, hl: t.len / 2 + 0.05, hw: t.wid / 2, ly: t.belt, active: false, s: 0, lane: 0, off: 0, v: 0, want: 44, x: 0, z: 0, dx: 0, dz: 1, prevLong: 0, changeIn: 0, blinkT: 0, blinkSide: 0, nextLane: -1, retry: 0, yieldT: 0, hurry: 0, braking: 0, latV: 0, honkT: 0 });
+      this.cars.push({ key: 'north', chain: chains.north, mesh, kind: 'lux', racer: true, behave: 'racer', slow: 1, rank: 9, hl: t.len / 2 + 0.05, hw: t.wid / 2, ly: t.belt, ...blank(), want: 44, head: 0.3, react: 0, acc: 6.2 });
     }
     // сломанные машины с аварийкой: стоят в правом ряду, поток их объезжает
     const tri = new THREE.Shape();
@@ -46,8 +55,9 @@ export class Traffic {
       mesh.add(sign);
       mesh.visible = false;
       scene.add(mesh);
-      this.cars.push({ key, chain: chains[key], mesh, kind, stalled: true, behave: 'stalled', slow: 0, rank: 0, hl: t.len / 2 + 0.05, hw: t.wid / 2, ly: t.belt, active: false, s: 0, lane: 0, off: 0, v: 0, want: 0, x: 0, z: 0, dx: 0, dz: 1, prevLong: 0, changeIn: 0, blinkT: 0, blinkSide: 0, nextLane: -1, retry: 0, yieldT: 0, hurry: 0, braking: 0, latV: 0, honkT: 0 });
+      this.cars.push({ key, chain: chains[key], mesh, kind, stalled: true, behave: 'stalled', slow: 0, rank: 0, hl: t.len / 2 + 0.05, hw: t.wid / 2, ly: t.belt, ...blank() });
     }
+    this.stalledCars = this.cars.filter((q) => q.stalled);
     // огни: по 4 точки на машину (фары и стопы) и ещё 4 под поворотники
     const n = this.cars.length;
     const points = (size) => {
@@ -72,12 +82,13 @@ export class Traffic {
     this.m4 = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.v3 = new THREE.Vector3(); this.s3 = new THREE.Vector3(); this.up = new THREE.Vector3(0, 1, 0);
   }
 
-  // У каждого ряда своя скорость: левый самый быстрый, каждый следующий вправо — на ~13 км/ч медленнее.
+  // У каждого ряда своя скорость: правый — около 40 км/ч, каждый следующий влево — на ~10 км/ч быстрее.
+  // Поток заметно медленнее игрока: мимо машины он проходит за секунду и не висит у неё на хвосте.
   // Ряды постоянно смещаются друг относительно друга, поэтому «стенка» из машин долго не держится.
   // Внутри ряда разброс маленький, чтобы машины не сбивались в хвост за самой медленной.
   wantSpeed(lane, lanes) {
     const fromRight = lanes - 1 - lane; // 0 — крайний правый ряд
-    return 12.2 + fromRight * 3.6 + (this.rnd() - 0.5) * 1.0;
+    return 11.5 + fromRight * 2.7 + (this.rnd() - 0.5) * 1.0;
   }
 
   laneFree(car, lane, s, back, fwd) {
@@ -90,18 +101,43 @@ export class Traffic {
     return true;
   }
 
+  // Можно ли встать в ряд nl: смотрим не только место, но и скорости — перед быстрой машиной сзади не втискиваемся,
+  // в хвост медленной впереди не влетаем. tight — манёвр срочный, запас меньше.
+  canMerge(car, nl, tight) {
+    const base = tight ? 2.5 : 4;
+    for (const o of this.cars) {
+      if (o === car || !o.active || o.key !== car.key || (o.lane !== nl && o.nextLane !== nl)) continue;
+      const d = o.s - car.s, len = o.hl + car.hl;
+      if (d >= 0 ? d - len < base + Math.max(0, car.v - o.v) * 1.2 : -d - len < base + Math.max(0, o.v - car.v) * (tight ? 1.5 : 2.2)) return false;
+    }
+    return true;
+  }
+
   place(car, s) {
     const c = car.chain;
     if (s < 8 || s > c.total - 8) return false;
     c.at(s, this.tmp);
     const lanes = this.tmp.lanes, lane = car.behave === 'bus' ? lanes - 1 : Math.floor(this.rnd() * lanes); // автобус — только в правом ряду
     if (!this.laneFree(car, lane, s, 12 + car.hl * 2, 12 + car.hl * 2)) return false;
+    // тот, кто перестраивается, числится уже в новом ряду, а сам ещё в старом — смотрим и по месту на дороге
+    const off = laneOffset(lane, this.tmp.lf);
+    for (const o of this.cars) if (o !== car && o.active && o.key === car.key && Math.abs(o.off - off) < 2.8 && Math.abs(o.s - s) < 12 + car.hl * 2) return false;
+    c.at(s + 200, this.tmp2);
+    if (lane > this.tmp2.lanes - 1) return false; // ряд скоро кончится — незачем в нём появляться
+    for (const t of this.stalledCars) if (t.active && t.key === car.key && t.lane === lane && t.s > s && t.s - s < 260) return false; // не в ряд, где впереди сломанная
     car.s = s; car.lane = lane; car.nextLane = -1;
-    car.off = laneOffset(lane, this.tmp.lf);
+    car.off = off;
     car.want = this.wantSpeed(lane, lanes) * car.slow;
     car.v = car.want;
+    // впереди в ряду кто-то медленный или стоит — появляемся уже с безопасной скоростью
+    for (const o of this.cars) {
+      if (o === car || !o.active || o.key !== car.key || o.lane !== lane || o.s <= s) continue;
+      const gap = o.s - s - o.hl - car.hl;
+      if (gap < 90) car.v = Math.min(car.v, Math.sqrt(o.v * o.v + 2 * 3 * Math.max(0, gap - 6)));
+    }
     car.changeIn = 4 + this.rnd() * 14;
     car.blinkT = 0; car.blinkSide = 0; car.yieldT = 0; car.hurry = 0; car.braking = 0; car.latV = 0;
+    car.nudge = 0; car.nudgeT = 0; car.nudgeAge = 0; car.nudgeCd = 0; car.scare = 0; car.wait = 0; car.tStar = Infinity; car.evadeSlow = false;
     car.prevLong = NaN;
     car.active = true;
     car.mesh.visible = true;
@@ -166,19 +202,20 @@ export class Traffic {
     this.only = key;
     for (const car of this.cars) {
       if (!car.stalled && !car.racer && !car.active && car.key !== key) { car.key = key; car.chain = this.chains[key]; } // свободные машины переходят на новую сторону
-      if (car.key !== key || car.active || car.stalled || car.racer || car.rank > this.density) continue;
+      this.chains[key].at(from + 60, this.tmp);
+      if (car.key !== key || car.active || car.stalled || car.racer || car.rank > this.density * Math.min(1, this.tmp.lanes / LANES_FULL)) continue;
       for (let k = 0; k < 6 && !car.active; k++) this.place(car, from + this.rnd() * (s1 - 40 - from));
     }
   }
   release() { this.held = null; }
 
   // Поставить гонщиков в первый ряд у стоп-линии (stop — где она вдоль оси). Обычные машины с этих мест убираем.
-  stageRacers(key, stop, skipLane = -1) {
+  stageRacers(key, stop, skipLane = -1, banLane = -1) {
     const c = this.chains[key], placed = [];
     c.at(stop - 4, this.tmp);
     const lanes = this.tmp.lanes, lf = this.tmp.lf;
     // сначала ряды рядом с пропущенным (рядом с игроком), остальные — как повезёт
-    const free = [...Array(lanes).keys()].filter((l) => l !== skipLane).sort((a, b) => skipLane < 0 ? this.rnd() - 0.5 : Math.abs(a - skipLane) - Math.abs(b - skipLane));
+    const free = [...Array(lanes).keys()].filter((l) => l !== skipLane && l !== banLane).sort((a, b) => skipLane < 0 ? this.rnd() - 0.5 : Math.abs(a - skipLane) - Math.abs(b - skipLane));
     const taken = new Set(this.cars.filter((q) => q.racer && q.active && q.key === key && Math.abs(q.s - stop) < 12).map((q) => q.lane));
     for (const car of this.cars) {
       if (!car.racer) continue;
@@ -187,7 +224,7 @@ export class Traffic {
       if (lane === undefined || placed.length >= (lanes > 2 ? 2 : 1)) break;
       taken.add(lane);
       car.key = key; car.chain = c; car.s = stop - car.hl - 0.8; car.lane = lane; car.nextLane = -1;
-      car.off = laneOffset(lane, lf); car.v = 0; car.want = 40 + this.rnd() * 6; car.blinkSide = 0; car.latV = 0; car.prevLong = NaN;
+      car.off = laneOffset(lane, lf); car.v = 0; car.want = 40 + this.rnd() * 6; car.blinkSide = 0; car.latV = 0; car.prevLong = NaN; car.wait = 0; car.scare = 0;
       car.active = true; car.mesh.visible = true;
       placed.push(car);
       for (const o of this.cars) if (o !== car && o.active && !o.stalled && o.key === key && o.lane === lane && Math.abs(o.s - car.s) < 16) { o.active = false; o.mesh.visible = false; o.retry = 1; }
@@ -227,7 +264,7 @@ export class Traffic {
       const p = this.window(key, player);
       for (const car of this.cars) {
         if (car.key !== key || car.stalled || car.racer) continue;
-        for (let k = 0; k < 8 && !car.active && car.rank <= this.density; k++) {
+        for (let k = 0; k < 8 && !car.active && car.rank <= this.density * Math.min(1, p.lanes / LANES_FULL); k++) {
           const s = p.lo + this.rnd() * (p.hi - p.lo);
           if (Math.abs(s - p.s) < 45 && p.d < 30) continue; // не ставим машину вплотную к игроку
           this.place(car, s);
@@ -237,11 +274,167 @@ export class Traffic {
     this.pose();
   }
 
+  // есть ли в ряду nl место для машины car: никого рядом и сразу впереди. Возвращает просвет до ближайшей впереди
+  // (200 — ряд пуст) или −1, если рядом кто-то есть. me — игрок, он считается наравне с машинами.
+  laneRoom(car, nl, me, back, fwd) {
+    let g = 200;
+    const look = (t) => {
+      if (t.lane !== nl && t.nextLane !== nl) return true;
+      const ds = t.s - car.s, len = t.hl + car.hl;
+      if (ds > -(len + back + Math.max(0, t.v - car.v) * 0.9) && ds < len + fwd) return false;
+      if (ds > 0 && ds - len < g) { g = ds - len; this.roomV = t.v; }
+      return true;
+    };
+    this.roomV = 0;
+    for (const t of this.cars) if (t !== car && t.active && t.key === car.key && !look(t)) return -1;
+    if (me && !look(me)) return -1;
+    return g;
+  }
+
+  // «Режиссёр потока». Смотрит на 11 секунд вперёд по ходу игрока: можно ли пройти между машинами, меняя ряды?
+  // Время режется на клетки по 0,2 с; машина занимает в своём ряду клетки вокруг момента, когда игрок её догонит.
+  // Если впереди глухая стенка — одной из её машин незаметно меняем скорость на десяток км/ч,
+  // и к подъезду игрока в стенке появляется щель.
+  direct(P) {
+    for (const car of this.cars) car.tStar = Infinity;
+    this.clearAhead = true;
+    if (!P.on || P.v < 3) return;
+    const key = P.key, c = this.chains[key], DT = 0.2, vP = Math.max(P.v, 27), W = 64, ML = 5;
+    let T = 11;
+    const sg = this.signals ? this.signals.next(key, P.s) : null;
+    if (sg && sg.it.g.state !== 'g') T = Math.min(T, (sg.d - 30) / vP); // очередь у красного не трогаем
+    const NC = Math.min(W - 4, Math.floor(T / DT));
+    if (NC < 6) return;
+    const plan = this.plan || (this.plan = { cars: [], lanes: new Uint8Array(W), occ: new Uint8Array(W * ML), reach: new Uint8Array(W * ML) });
+    const { cars, lanes, occ, reach } = plan;
+    cars.length = 0;
+    for (let i = 0; i <= NC; i++) { c.at(P.s + vP * i * DT, this.tmp); lanes[i] = this.tmp.lanes; }
+    for (const car of this.cars) {
+      if (!car.active || car.key !== key || car.racer) continue;
+      const ds = car.s - P.s;
+      if (ds > -16 && ds < 380) cars.push(car); // и те, что идут рядом чуть позади: они запирают игрока сбоку
+    }
+    const speedOf = (car, ovs) => {
+      for (const ov of ovs) if (ov.car === car) return ov.v;
+      return car.stalled ? 0 : car.nudgeT > 0 ? Math.max(3, car.want + car.nudge) : car.v;
+    };
+    const free = (l, i) => { const k = i > NC ? NC : i; return l >= 0 && l < lanes[k] && !occ[l * W + k]; };
+    const solve = (ovs) => {
+      occ.fill(0); reach.fill(0);
+      for (const car of cars) {
+        const rel = Math.max(2.5, vP - speedOf(car, ovs)), ts = (car.s - P.s) / rel, tau = (car.hl + P.hl + 2.6) / rel;
+        const i0 = Math.max(0, Math.ceil((ts - tau) / DT)), i1 = Math.min(NC, Math.floor((ts + tau) / DT));
+        for (let i = i0; i <= i1; i++) { occ[car.lane * W + i] = 1; if (car.nextLane >= 0) occ[car.nextLane * W + i] = 1; }
+      }
+      reach[P.lane * W] = 1;
+      for (const l of [P.lane - 1, P.lane + 1]) if (free(l, 0) && free(l, 1)) reach[l * W] = 1;
+      let far = 0;
+      for (let i = 0; i < NC; i++) for (let l = 0; l < ML; l++) {
+        if (!reach[l * W + i]) continue;
+        far = i;
+        if (!free(l, i + 1)) continue;
+        reach[l * W + i + 1] = 1;
+        // нырок в соседний ряд: две клетки машина идёт «на два ряда», на третьей уже в новом
+        for (const nl of [l - 1, l + 1]) if (free(nl, i + 1) && free(l, i + 2) && free(nl, i + 2) && free(nl, i + 3)) reach[nl * W + Math.min(NC, i + 3)] = 1;
+      }
+      for (let l = 0; l < ML; l++) if (reach[l * W + NC]) far = NC;
+      return far;
+    };
+    // Ближний план: машина A — ближайшая впереди в ряду игрока. К моменту, когда он её догонит (или уже догнал
+    // и висит на хвосте), хотя бы в одном соседнем ряду вдоль A должно быть окно для нырка. Если с обеих сторон
+    // занято — в том ряду, где проще, машины расступаются: кто впереди — чуть прибавляет, кто сзади — отпускает.
+    let A = null, gapA = Infinity;
+    for (const car of cars) {
+      if ((car.lane !== P.lane && car.nextLane !== P.lane) || car.s <= P.s) continue;
+      const gp = car.s - P.s - car.hl - P.hl;
+      if (gp < gapA) { gapA = gp; A = car; }
+    }
+    if (A && A.v < 26 && A.v > 6) { // стоящую (сломанную или очередь у светофора) объезжают и так
+      const relA = P.v - A.v, tA = relA > 1.5 ? gapA / relA : gapA < 10 + P.v * 0.9 ? 0 : Infinity;
+      if (tA <= 5) {
+        // окно относительно A: от «корпус игрока + запас» позади до «встать перед ней»; чем быстрее игрок, тем дальше вперёд
+        const z0 = -(A.hl + 2 * P.hl + 9), z1 = A.hl + 2 * P.hl + 5 + Math.min(16, Math.max(0, relA) * 0.7);
+        let pick = null, pickCost = Infinity;
+        for (const nl of [P.lane - 1, P.lane + 1]) {
+          if (nl < 0 || nl >= lanes[0] || nl >= lanes[Math.min(NC, 10)]) continue;
+          const moves = [];
+          let cost = 0;
+          for (const car of cars) {
+            if (car === A || (car.lane !== nl && car.nextLane !== nl)) continue;
+            const x = car.s - A.s + (speedOf(car, NONE) - A.v) * tA; // где она будет относительно A
+            if (x + car.hl < z0 || x - car.hl > z1) continue;
+            if (car.stalled) { cost = Infinity; break; }
+            const fwd = z1 - (x - car.hl), back = x + car.hl - z0, dir = fwd * 1.6 < back ? 1 : -1;
+            moves.push({ car, dir });
+            cost += dir > 0 ? fwd * 1.6 : back; // отпустить назад естественнее, чем разгонять
+          }
+          if (cost < pickCost) { pickCost = cost; pick = moves; }
+        }
+        if (pick) for (const m of pick) {
+          const w = m.car.want, v = m.dir > 0 ? Math.min(w + 6, Math.max(w, A.v + 4.5)) : Math.max(5, w - 6, Math.min(w, A.v - 4.5));
+          m.car.nudge = v - m.car.want; m.car.nudgeT = 0.6; m.car.nudgeAge = 0; m.car.nudgeHard = true;
+        }
+        if (A.nudgeT > 0 && A.nudge < 0) A.nudgeT = 0;
+      }
+    }
+    if (P.v < 14) return; // дальний план нужен только на ходу
+    const ovs = [];
+    let far = solve(ovs);
+    for (let round = 0; round < 3 && far < NC; round++) {
+      const tw = far * DT;
+      let best = null, bestFar = far;
+      for (const car of cars) {
+        if (car.stalled || car.nudgeT > 0 || car.nudgeCd > 0 || ovs.some((ov) => ov.car === car)) continue;
+        const v0 = car.v, ts = (car.s - P.s) / Math.max(2.5, vP - v0);
+        if (ts < 1.2 || ts < tw - 0.8 || ts > tw + 2.6) continue; // только машины самой стенки; совсем близкие уже не успеют
+        for (const dir of [-1, 1]) {
+          // есть ли куда: ускоряться — нужен запас впереди, притормаживать — позади
+          const need = NUDGE * Math.min(ts, 6) * 0.8 + 7;
+          let room = true;
+          for (const t of this.cars) {
+            if (t === car || !t.active || t.key !== key || (t.lane !== car.lane && t.nextLane !== car.lane)) continue;
+            const d = (t.s - car.s) * dir - t.hl - car.hl;
+            if (d > 0 && d < need) { room = false; break; }
+          }
+          if (!room) continue;
+          const ov = { car, v: Math.max(4, v0 + dir * NUDGE), dir };
+          ovs.push(ov);
+          const f = solve(ovs);
+          ovs.pop();
+          if (f > bestFar) { bestFar = f; best = ov; }
+        }
+      }
+      if (!best) break;
+      ovs.push(best); far = bestFar;
+    }
+    for (const ov of ovs) { ov.car.nudge = ov.dir * NUDGE; ov.car.nudgeT = 1.2; ov.car.nudgeAge = 0; ov.car.nudgeHard = false; }
+    for (const car of cars) {
+      const ts = (car.s - P.s) / Math.max(2.5, vP - car.v);
+      car.tStar = ts;
+      // держим поправку, пока игрок не проедет, но не дольше 6 с: иначе машина начнёт ехать вровень с соседним рядом
+      if (car.nudgeT > 0 && ts > 0.4 && ts < T && car.nudgeAge < 6) car.nudgeT = Math.max(car.nudgeT, 0.5);
+    }
+    this.clearAhead = far >= NC;
+  }
+
   update(dt, player, pw, events) {
     this.time += dt;
     this.blinkOn = (this.time * 2.4) % 1 < 0.55;
     for (const key of ['north', 'south']) this.window(key, player);
     const o = this.tmp;
+
+    // игрок для потока — такая же машина: у неё есть ряд, скорость и боковое движение
+    const P = this.ghost, pp = this.proj[this.only];
+    P.key = this.only;
+    P.on = pp.facing > 0 && pp.d < halfWidth(pp.lf) + 2.5;
+    P.s = pp.s; P.off = pp.lat; P.v = Math.max(0, pp.vAlong); P.hl = pw.hl; P.hw = pw.hw;
+    P.latV = player.vx * pp.dz - player.vz * pp.dx;
+    P.lane = Math.max(0, Math.min(pp.lanes - 1, Math.round(pp.lf / 2 - 0.5 - pp.lat / LANE_W)));
+    this.dirT -= dt;
+    if (this.dirT <= 0) { this.dirT = 0.2; this.direct(P); }
+    // Машин столько, сколько вмещает дорога: на трёх рядах их меньше, чем на четырёх, иначе все ряды
+    // забиваются под завязку и между машинами не остаётся места.
+    this.eff = this.density * Math.min(1, pp.lanes / LANES_FULL);
 
     for (const car of this.cars) {
       if (car.stalled) continue; // стоит на месте, только мигает
@@ -250,7 +443,7 @@ export class Traffic {
       const p = this.proj[car.key], c = car.chain;
       if (!car.active) {
         car.retry -= dt;
-        if (car.retry <= 0 && car.rank <= this.density) {
+        if (car.retry <= 0 && car.rank <= this.eff) {
           car.retry = 0.4 + this.rnd() * 0.6;
           // новая машина появляется на дальнем краю окна — туда, откуда она поедет к игроку
           const farAhead = p.facing > 0 ? p.hi - this.rnd() * 60 : p.lo + this.rnd() * 60;
@@ -261,71 +454,163 @@ export class Traffic {
         continue;
       }
       if (car.s < p.lo || car.s > p.hi || car.s > c.total - 8) { car.active = false; car.mesh.visible = false; car.retry = this.rnd() * 0.5; continue; }
+      // лишние (дорога сузилась) уходят там, где этого не видно: позади игрока или далеко впереди
+      if (!car.racer && car.rank > this.eff + 0.03 && (car.s - p.s < -45 || car.s - p.s > 420)) { car.active = false; car.mesh.visible = false; continue; }
 
       c.at(car.s, o);
       const lanes = o.lanes, lf = o.lf;
       if (car.lane > lanes - 1) { car.lane = lanes - 1; car.nextLane = -1; car.blinkSide = 0; }
+      c.at(car.s + 190, this.tmp2);
+      const lanesAhead = Math.min(lanes, this.tmp2.lanes); // через пару сотен метров рядов может стать меньше
       if (car.hurry > 0) car.hurry -= dt;
+      if (car.nudgeT > 0) { car.nudgeT -= dt; car.nudgeAge += dt; if (car.nudgeT <= 0) car.nudgeCd = 4; } else if (car.nudgeCd > 0) car.nudgeCd -= dt;
+      if (car.scare > 0) car.scare -= dt;
+      if (car.honkT > 0) car.honkT -= dt;
+      const me = P.on && car.key === P.key ? P : null;
+      const long = car.hl > 3; // автобус и маршрутка: медленно и плавно, чтобы не задевать соседние ряды
+      const quick = car.racer ? 5.2 : long ? 0.75 : car.hurry > 0 ? 3.4 : 1.5; // боковая скорость, м/с
+      const tgt = laneOffset(car.lane, lf);
 
-      // держим дистанцию до машины впереди; та, которой моргнули и которой мешают, прибавляет, чтобы встать перед помехой
-      let limit = car.want + (car.yieldT > 0 ? 9 : 0), gapBest = Infinity, boxed = false, stuck = false;
-      for (const t of this.cars) {
-        if (t === car || !t.active || t.key !== car.key) continue;
-        if (t.lane !== car.lane && t.nextLane !== car.lane && t.lane !== car.nextLane) continue;
+      // --- кто впереди на пути: по ряду и «по железу» (перекрытие бортами), чтобы никто не проезжал сквозь соседа ---
+      let lead = null, gapBest = Infinity, leadHard = false, laneLead = null, laneGap = Infinity;
+      const scan = (t) => {
+        if (t.s <= car.s) return;
         const gap = t.s - car.s - t.hl - car.hl;
-        if (gap > -2 && gap < gapBest) { gapBest = gap; if (gap < 7 + car.v * 1.1) { limit = Math.min(limit, gap < 3 ? 0 : t.v); boxed = true; } if (t.stalled && gap < 45) stuck = true; }
+        if (gap > 140) return;
+        const sep = Math.abs(t.off - car.off) - car.hw - t.hw - 0.35; // боковой просвет
+        const same = t.lane === car.lane || t.nextLane === car.lane;
+        if (same && gap < laneGap) { laneGap = gap; laneLead = t; }
+        let inPath = same || sep < 0 || (car.nextLane >= 0 && t.lane === car.nextLane);
+        if (!same && sep < 0 && Math.abs(tgt - car.off) > 0.3 && (car.off - t.off) * (tgt - car.off) > 0) {
+          // уходим из её ряда и разойдёмся бортами раньше, чем догоним, — она не мешает
+          if (-sep / quick < gap / Math.max(0.5, car.v - t.v) - 0.12) inPath = false;
+        }
+        if (inPath && gap < gapBest) { gapBest = gap; lead = t; leadHard = sep < 0; }
+      };
+      for (const t of this.cars) if (t !== car && t.active && t.key === car.key) scan(t);
+      if (me) scan(me);
+
+      // --- скорость: держим дистанцию по времени (очередь после светофора растягивается, а не едет бампер в бампер) ---
+      const want = car.want + (car.nudgeT > 0 ? car.nudge : 0) + (car.yieldT > 0 ? 9 : 0);
+      let limit = want, boxed = false, stuck = false;
+      if (lead) {
+        limit = Math.min(limit, Math.sqrt(lead.v * lead.v + 2 * (car.racer ? 9 : 5) * Math.max(0, gapBest - 2)));
+        const desired = 3.5 + car.v * car.head;
+        if (gapBest < desired * 1.6) {
+          let vt = lead.v + (gapBest - desired) * 0.7;
+          if (gapBest > 4) vt = Math.max(vt, Math.min(car.v, lead.v) - 2.5); // дистанцию восстанавливаем мягко, без резкого торможения
+          limit = Math.min(limit, Math.max(0, vt));
+          if (lead.v < car.want - 1) boxed = true;
+        }
+        if (lead.stalled && gapBest < 90) stuck = true;
+        // подрезали: игрок влез вплотную и едет медленнее — водитель тормозит и сигналит
+        if (lead === me && gapBest < 3 + car.v * 0.35 && car.v - P.v > 2.5 && !(car.honkT > 0)) { car.honkT = 3.5; events.honk = true; }
       }
       // просили уступить, а впереди занято и ускориться нельзя — сбрасываем скорость, чтобы пропустить соседей и уйти за них
       if (car.yieldT > 0 && boxed) limit = Math.min(limit, car.want - 4.5);
       // впереди сломанная машина — объезжаем её слева, как на моргание
       if (stuck && !car.blinkSide && car.yieldT <= 0) { car.yieldT = 4; car.hurry = 4; }
-      // красный или жёлтый — тормозим к стоп-линии
-      if (this.signals) limit = Math.min(limit, this.signals.limit(car.key, car.s + car.hl, car.v));
-      // игрок тоже препятствие: не таранить его сзади, если он стоит или едет медленнее
-      const dsP = p.s - car.s, latP = p.lat - car.off;
-      if (car.honkT > 0) car.honkT -= dt;
-      if (p.d < 14 && dsP > 0 && dsP - car.hl - 2.3 < 6 + car.v && Math.abs(latP) < 2.1 && p.vAlong < car.v) {
-        limit = Math.min(limit, dsP - car.hl - 2.3 < 3 ? 0 : Math.max(0, p.vAlong));
-        // подрезали: игрок влез вплотную и едет медленнее — водитель тормозит и сигналит
-        if (dsP - car.hl - 2.5 < 3 + car.v * 0.35 && car.v - p.vAlong > 2.5 && !(car.honkT > 0)) { car.honkT = 3.5; events.honk = true; }
+      // красный или жёлтый — тормозим к стоп-линии. Свободный ряд (free) освобождаем: близкие проскакивают на жёлтый,
+      // остальные уходят в соседний ряд. Перестраиваться в него нельзя, пока очередь не разъедется.
+      let evade = car.lane > lanesAhead - 1 && car.nextLane < 0, ban = -1; // наш ряд скоро кончится — перестраиваемся заранее
+      let dead = -1; // ряд, где впереди стоит сломанная машина: из него уходим заранее, в него не лезем
+      for (const t of this.stalledCars) if (t.active && t.key === car.key && t.s > car.s && t.s - car.s < 230) { dead = t.lane; if (car.lane === dead && car.nextLane < 0) evade = true; }
+      const sg = this.signals ? this.signals.next(car.key, car.s + car.hl) : null;
+      if (sg) {
+        const it = sg.it, st = it.g.state;
+        if (st !== 'g') {
+          ban = it.free;
+          let stop = st === 'r' || sg.d > car.v * 1.1;
+          if (car.lane === it.free) {
+            if (st === 'y' && sg.d < car.v * 3 + 6) { stop = false; limit = Math.min(limit + 3, want + 3); }
+            else if (sg.d > 3) evade = true;
+          }
+          if (stop) limit = Math.min(limit, Math.sqrt(2 * 3.4 * Math.max(0, sg.d - 1)));
+          if (evade && car.evadeSlow) limit = Math.min(limit, Math.max(3, car.want * 0.55)); // не пускают — отстаём и встаём за соседями
+        } else if (this.signals.time - it.greenT < 7) ban = it.free;
       }
-      // игрок в той полосе рядом или быстро догоняет сзади — туда перестраиваться нельзя, даже если он моргал
-      const playerIn = (nl) => p.d < 16 && Math.abs(p.lat - laneOffset(nl, lf)) < 2.3 && dsP < car.hl + 16 && dsP > -(car.hl + 10 + Math.max(0, p.vAlong - car.v) * 1.8);
+      // игрок смещается в наш ряд прямо перед капотом (хоть на полкорпуса впереди) — водитель пугается: тормозит и сигналит
+      if (me && !car.racer) {
+        const dsP = P.s - car.s, side = P.off - car.off, latGap = Math.abs(side) - P.hw - car.hw, gapL = dsP - car.hl - P.hl;
+        const closing = -Math.sign(side) * (P.latV - car.latV), near = 5 + car.v * 0.3;
+        if (dsP > 1.2 && gapL < near && latGap > -0.2 && latGap < 1.6 && closing > 0.6 && !(car.honkT > 0)) {
+          const tLat = Math.max(0, latGap) / closing;
+          if (tLat < 0.9 && gapL + (P.v - car.v) * tLat < near) { car.scare = 0.75; car.honkT = 3.5; events.honk = true; }
+        }
+      }
+      if (car.scare > 0) limit = Math.min(limit, Math.max(0, car.v - 6));
+      if (evade && car.evadeSlow && (car.lane > lanesAhead - 1 || car.lane === dead)) limit = Math.min(limit, Math.max(4, car.want * 0.6)); // ряд кончается, а сбоку не пускают
+
       const dv = limit - car.v;
-      car.braking = dv < -1.5 ? 0.3 : Math.max(0, car.braking - dt);
-      car.v += Math.max(-7 * dt, Math.min((car.racer ? 6.2 : car.yieldT > 0 ? 5 : 2.2) * dt, dv));
+      const soft = car.nudgeT > 0 && limit >= want - 0.01; // поправка режиссёра — плавно и без стоп-сигналов
+      car.braking = (dv < -1.5 && !soft) || car.scare > 0 ? 0.3 : Math.max(0, car.braking - dt);
+      // с места трогаются не все разом: у каждого своя реакция
+      let go = true;
+      if (car.racer) go = true;
+      else if (car.v < 0.4 && dv > 0) { car.wait += dt; go = car.wait >= car.react; } else if (car.v > 2) car.wait = 0;
+      const hard = car.nudgeT > 0 && car.nudgeHard; // пропускает игрока — действует живее
+      car.v += Math.max(-(soft ? (hard ? 2.6 : 1.3) : car.racer ? 10 : 7) * dt, Math.min(go ? (car.racer ? 6.2 : car.yieldT > 0 ? 5 : hard ? 3.2 : car.acc) * dt : 0, dv));
       if (car.v < 0) car.v = 0;
       car.s += car.v * dt;
+      // страховка: бампер в бампер можно, насквозь — нельзя
+      if (lead && leadHard) {
+        const g2 = lead.s - car.s - lead.hl - car.hl;
+        if (g2 < 0.4 && g2 > -0.9) { car.s = lead.s - lead.hl - car.hl - 0.4; car.v = Math.min(car.v, lead.v); }
+      }
 
-      // перестроения
+      // --- перестроения ---
+      // игрок в том ряду рядом или быстро догоняет сзади — туда нельзя, даже если он моргал
+      const dsP = P.s - car.s;
+      const playerIn = (nl) => me && Math.abs(P.off - laneOffset(nl, lf)) < 2.3 && dsP < car.hl + 16 && dsP > -(car.hl + 10 + Math.max(0, P.v - car.v) * 2.2);
       car.changeIn -= dt;
-      if (car.blinkSide) {
+      if (car.racer) {
+        // гонщик идёт шашками: догоняет машину — ныряет в соседний ряд, где дальше свободно; некуда — висит на хвосте и ждёт щель
+        if (car.blinkSide && (car.blinkT -= dt) < -0.7) car.blinkSide = 0;
+        if (Math.abs(tgt - car.off) < 0.7 && car.v > 5 && (evade || laneLead)) {
+          const ttc = laneLead ? laneGap / Math.max(1, car.v - laneLead.v) : 99;
+          if (evade || ttc < 1.6 || laneGap < 14) {
+            // выбираем соседний ряд, где впереди свободнее, чем в своём
+            let best = -1, bestRoom = evade ? -1 : laneGap + 5;
+            for (const nl of [car.lane - 1, car.lane + 1]) {
+              if (nl < 0 || nl > lanesAhead - 1 || nl === ban || (nl === dead && !evade)) continue;
+              const g = this.laneRoom(car, nl, me, 2, 2.5);
+              if (g > bestRoom) { bestRoom = g; best = nl; }
+            }
+            if (best >= 0) { car.blinkSide = best < car.lane ? 1 : -1; car.blinkT = 0; car.lane = best; car.wait = 0; }
+            else if (laneLead && laneLead !== me && laneGap < 16 && car.v < car.want - 8) {
+              // некуда нырнуть — висит на хвосте и «моргает»: передняя машина уступает, как игроку
+              car.wait += dt;
+              if (car.wait > 0.7) { car.wait = -1.8; if (!laneLead.racer && !laneLead.stalled) this.askToYield(laneLead); }
+            }
+          }
+        }
+      } else if (car.scare > 0) {
+        if (car.blinkSide && car.nextLane >= 0) { car.nextLane = -1; car.blinkSide = 0; car.changeIn = 3; } // не до перестроений
+      } else if (car.blinkSide) {
         car.blinkT -= dt;
         if (car.blinkT <= 0) {
           if (car.nextLane >= 0 && playerIn(car.nextLane)) { car.nextLane = -1; car.blinkSide = 0; car.changeIn = 2; } // передумал: там игрок
-          else if (car.nextLane >= 0 && car.nextLane < lanes) { car.lane = car.nextLane; if (!car.racer) car.want = this.wantSpeed(car.lane, lanes) * car.slow; }
-          car.nextLane = -1;
-          if (car.blinkT < -1.6) car.blinkSide = 0;
+          else if (car.nextLane >= 0 && car.nextLane < lanes) {
+            // за время, пока мигал поворотник, рядом мог кто-то оказаться — ждём, не лезем
+            if (this.canMerge(car, car.nextLane, true)) { car.lane = car.nextLane; car.want = this.wantSpeed(car.lane, lanes) * car.slow; car.nextLane = -1; car.blinkT = 0; }
+            else if (car.blinkT < -2.5) { car.nextLane = -1; car.blinkSide = 0; car.changeIn = 3; }
+          } else car.nextLane = -1;
+          if (car.nextLane < 0 && car.blinkT < -1.6) car.blinkSide = 0;
         }
-      } else if (car.racer) {
-        // упёрся в поток — ныряет в соседний ряд, где свободнее
-        if (boxed && car.v > 6) {
-          let best = -1, bestGap = gapBest + 14;
-          for (const nl of [car.lane - 1, car.lane + 1]) {
-            if (nl < 0 || nl > lanes - 1 || playerIn(nl) || !this.laneFree(car, nl, car.s, 7, 9)) continue;
-            let g = 200;
-            for (const t of this.cars) if (t !== car && t.active && t.key === car.key && t.lane === nl) { const d = t.s - car.s - t.hl - car.hl; if (d > 0 && d < g) g = d; }
-            if (g > bestGap) { bestGap = g; best = nl; }
-          }
-          if (best >= 0) { car.nextLane = best; car.blinkSide = best < car.lane ? 1 : -1; car.blinkT = 0.12; car.hurry = 2; }
+      } else if (evade) {
+        car.evadeSlow = true;
+        for (const nl of car.lane * 2 >= lanes - 1 ? [car.lane - 1, car.lane + 1] : [car.lane + 1, car.lane - 1]) {
+          if (nl < 0 || nl > lanesAhead - 1 || nl === dead || playerIn(nl) || !this.canMerge(car, nl, true)) continue;
+          car.nextLane = nl; car.blinkSide = nl < car.lane ? 1 : -1; car.blinkT = 0.35; car.hurry = 3; car.evadeSlow = false;
+          break;
         }
       } else if (car.behave === 'bus' && !stuck) {
-        if (car.lane < lanes - 1 && this.laneFree(car, car.lane + 1, car.s, 14, 20)) { car.nextLane = car.lane + 1; car.blinkSide = -1; car.blinkT = 1.2; } // возвращается в правый ряд
+        if (car.lane < lanesAhead - 1 && car.lane + 1 !== ban && car.lane + 1 !== dead && this.laneFree(car, car.lane + 1, car.s, 14, 20)) { car.nextLane = car.lane + 1; car.blinkSide = -1; car.blinkT = 1.2; } // возвращается в правый ряд
       } else if (car.yieldT > 0) {
         car.yieldT -= dt;
         // сначала вправо (полоса с большим номером), если занято — влево
         for (const nl of stuck ? [car.lane - 1] : [car.lane + 1, car.lane - 1]) {
-          if (nl < 0 || nl > lanes - 1 || playerIn(nl) || !this.laneFree(car, nl, car.s, 9, 12)) continue;
+          if (nl < 0 || nl > lanesAhead - 1 || nl === ban || nl === dead || playerIn(nl) || !this.laneFree(car, nl, car.s, 9, 12) || !this.canMerge(car, nl, true)) continue;
           car.nextLane = nl;
           car.blinkSide = nl < car.lane ? 1 : -1;
           car.blinkT = 0.25;
@@ -337,16 +622,24 @@ export class Traffic {
         car.changeIn = car.behave === 'pushy' ? 3 + this.rnd() * 6 : 7 + this.rnd() * 16; // маршрутки мечутся между рядами
         const dirL = car.lane === 0 ? 1 : car.lane === lanes - 1 ? -1 : this.rnd() < 0.5 ? -1 : 1;
         const nl = car.lane + dirL;
-        if (!playerIn(nl) && !(p.d < 16 && Math.abs(p.lat - laneOffset(nl, lf)) < 2.4 && Math.abs(dsP) < 28) && this.laneFree(car, nl, car.s, 14, 24)) {
+        // игрок подъедет через пару секунд — не дёргаемся у него перед носом; в свободный ряд у светофора тоже нельзя
+        if (nl <= lanesAhead - 1 && nl !== ban && nl !== dead && !(car.tStar > 0 && car.tStar < 4.5) && !playerIn(nl) && !(me && Math.abs(P.off - laneOffset(nl, lf)) < 2.4 && Math.abs(dsP) < 28) && this.laneFree(car, nl, car.s, 14, 24) && this.canMerge(car, nl, false)) {
           car.nextLane = nl;
           car.blinkSide = dirL < 0 ? 1 : -1; // полоса с меньшим номером — левее
           car.blinkT = 1.5;
         }
       }
+      if (!evade) car.evadeSlow = false;
       const dOff = laneOffset(car.lane, lf) - car.off;
-      const long = car.hl > 3; // автобус и маршрутка: медленно и плавно, чтобы не задевать соседние ряды
-      const quick = long ? 0.75 : car.hurry > 0 ? 3.4 : 1.5; // уступая, легковая перестраивается вдвое резче обычного
-      car.latV = Math.max(-quick, Math.min(quick, dOff * (long ? 1.1 : car.hurry > 0 ? 3.5 : 2.2)));
+      car.latV = Math.max(-quick, Math.min(quick, dOff * (car.racer ? 4.5 : long ? 1.1 : car.hurry > 0 ? 3.5 : 2.2)));
+      // сбоку вплотную кто-то есть — в него не смещаемся
+      if (Math.abs(car.latV) > 0.05) {
+        const dir = Math.sign(car.latV);
+        const beside = (t) => Math.abs(t.s - car.s) < t.hl + car.hl + 0.6 && (t.off - car.off) * dir > 0 && Math.abs(t.off - car.off) - t.hw - car.hw < 0.3;
+        let hit = me ? beside(me) : false;
+        if (!hit) for (const t of this.cars) if (t !== car && t.active && t.key === car.key && beside(t)) { hit = true; break; }
+        if (hit) car.latV = 0;
+      }
       car.off += car.latV * dt;
     }
 
