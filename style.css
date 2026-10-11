@@ -146,3 +146,62 @@ button.toggle.off { border-color: rgba(255, 255, 255, 0.22); color: rgba(255, 25
 .seg { display: flex; gap: 0; margin: 0 0 8px; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 12px; overflow: hidden; }
 .seg button { flex: 1; padding: 9px 4px; border: 0; background: transparent; color: rgba(255, 255, 255, 0.7); font: 600 13.5px/1 inherit; font-family: inherit; cursor: pointer; }
 .seg button.sel { background: rgba(255, 255, 255, 0.16); color: #fff; }
+
+/* ---------- новый интерфейс: меню сбоку, гараж, зеркало ---------- */
+button { touch-action: manipulation; }
+.screen { position: fixed; inset: 0; pointer-events: none; display: flex; align-items: stretch; justify-content: space-between; gap: 16px;
+  padding: max(18px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background: linear-gradient(90deg, rgba(8, 11, 16, 0.55) 0%, rgba(8, 11, 16, 0) 38%, rgba(8, 11, 16, 0) 55%, rgba(8, 11, 16, 0.72) 100%); }
+.screen > * { pointer-events: auto; }
+.brand { align-self: flex-start; pointer-events: none; }
+.brand h1 { margin: 0; font-size: clamp(40px, 9vw, 84px); font-weight: 900; letter-spacing: 0.02em; line-height: 0.95; font-style: italic;
+  background: linear-gradient(180deg, #fff 30%, #ffb38f 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 6px 30px rgba(229, 83, 42, 0.35); }
+.brand p { margin: 8px 0 0; font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.78; }
+.brand .best { letter-spacing: 0.04em; text-transform: none; font-size: 15px; opacity: 0.95; color: #ffd27a; }
+.panel, .gpanel { align-self: center; width: min(340px, 46vw); display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 22px;
+  background: rgba(14, 18, 24, 0.78); border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); }
+.panel p { margin: 0; text-align: center; }
+button.primary { margin: 0; padding: 17px 14px; border-radius: 16px; font-size: 20px; letter-spacing: 0.03em; text-transform: uppercase;
+  background: linear-gradient(180deg, #ff6a3c, #d9431c); box-shadow: 0 8px 24px rgba(229, 83, 42, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.3); }
+.rowbtn, .rowset { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08); color: #fff; font: inherit; }
+.rowbtn { cursor: pointer; width: 100%; text-align: left; }
+.rowbtn:active { background: rgba(255, 255, 255, 0.12); }
+.rowbtn span, .rowset > span { font-size: 13px; opacity: 0.65; letter-spacing: 0.04em; text-transform: uppercase; }
+.rowbtn b { margin-left: auto; font-size: 16px; }
+.rowbtn i { font-style: normal; font-size: 22px; opacity: 0.6; }
+.rowset .seg { margin: 0 0 0 auto; flex: 1; max-width: 230px; }
+.switch { margin-left: auto; width: 56px; height: 32px; border-radius: 999px; border: 0; background: rgba(255, 255, 255, 0.18); position: relative; cursor: pointer; padding: 0; transition: background 0.15s; }
+.switch i { position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+.switch.on { background: #2fbf6b; }
+.switch.on i { transform: translateX(24px); }
+.back { align-self: flex-start; padding: 12px 18px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(14, 18, 24, 0.7); color: #fff; font: 600 16px/1 inherit; font-family: inherit; cursor: pointer; }
+#garage { background: linear-gradient(90deg, rgba(8, 11, 16, 0.2) 0%, rgba(8, 11, 16, 0) 45%, rgba(8, 11, 16, 0.75) 100%); }
+.gpick { display: flex; align-items: center; gap: 8px; }
+.gpick > div { flex: 1; text-align: center; min-width: 0; }
+.gpick b { display: block; font-size: 22px; }
+.gpick span { display: block; font-size: 12.5px; opacity: 0.65; margin-top: 2px; }
+.gpick button { flex: none; width: 52px; height: 52px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.07); color: #fff; font: 600 26px/1 inherit; cursor: pointer; padding: 0 0 4px; }
+.gpick button:active { background: rgba(255, 255, 255, 0.2); transform: scale(0.94); }
+.gstats { display: grid; gap: 7px; }
+.gstats div { display: grid; grid-template-columns: 96px 1fr 62px; align-items: center; gap: 8px; font-size: 12.5px; }
+.gstats span { opacity: 0.65; }
+.gstats em { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; display: block; }
+.gstats em u { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ff7a3c, #ffc46a); transition: width 0.25s; }
+.gstats b { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.gpanel .swatches { margin: 4px 0; gap: 8px; flex-wrap: wrap; }
+.gpanel .swatches button { width: 40px; height: 40px; }
+#mute, #viewBtn { width: 46px; height: 46px; border-radius: 14px; z-index: 7; }
+#viewBtn { top: calc(max(10px, env(safe-area-inset-top)) + 54px); }
+.hud-top { padding-right: 56px; }
+/* зеркало заднего вида: сама картинка рисуется игрой точно в эту рамку */
+#mirror { position: absolute; left: 50%; top: max(8px, env(safe-area-inset-top)); transform: translateX(-50%); width: min(30vw, 300px); aspect-ratio: 3.5; border-radius: 10px;
+  border: 3px solid #0b0d10; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22), 0 6px 18px rgba(0, 0, 0, 0.5); }
+.chips { top: calc(max(8px, env(safe-area-inset-top)) + min(30vw, 300px) / 3.5 + 14px); }
+@media (max-height: 500px) { .speed { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); } }
+@media (orientation: portrait) {
+  .screen { flex-direction: column; background: linear-gradient(180deg, rgba(8, 11, 16, 0.5) 0%, rgba(8, 11, 16, 0) 30%, rgba(8, 11, 16, 0) 45%, rgba(8, 11, 16, 0.8) 100%); }
+  .panel, .gpanel { align-self: stretch; width: auto; margin-top: auto; }
+}
+@media (max-height: 430px) { .panel, .gpanel { gap: 7px; padding: 12px; } button.primary { padding: 13px; font-size: 18px; } .rowbtn, .rowset { min-height: 44px; } .keys { display: none; } .brand h1 { font-size: 44px; } }
+
+@media (pointer: coarse) { .keys { display: none; } }

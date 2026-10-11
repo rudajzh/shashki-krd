@@ -31,13 +31,13 @@ export const CAR_SETUP = {
 // shake — сила дрожи, roll — насколько валкий кузов. Рулятся все послушно: разница в разгоне, весе и подаче.
 const LADA_GEARS = [0, 13, 23, 34, 45, 56, 60];
 export const CARS = {
-  sedan: { name: 'Седан', setup: CAR_SETUP, engine: 'v8', feel: { sense: 1, shake: 1, roll: 1 } },
-  coupe: { name: 'Купе V10', setup: { ...CAR_SETUP, mass: 1560, inertia: 1180, a: 1.34, b: 1.31, grip: 3.5, power: 400000, driveForce: 16500, dragK: 0.4 }, engine: 'v10', feel: { sense: 0.85, shake: 0.6, roll: 0.45 } },
+  sedan: { name: 'Седан', note: 'Быстрый и ровный спортивный седан', setup: CAR_SETUP, engine: 'v8', feel: { sense: 1, shake: 1, roll: 1 } },
+  coupe: { name: 'Купе V10', note: 'Гиперкар: стоит как вкопанный', setup: { ...CAR_SETUP, mass: 1560, inertia: 1180, a: 1.34, b: 1.31, grip: 3.5, power: 400000, driveForce: 16500, dragK: 0.4 }, engine: 'v10', feel: { sense: 0.85, shake: 0.6, roll: 0.45 } },
   // тяжёлый и быстрый «кубик»: ревёт низко, кренится, но держит дорогу
-  gelik: { name: 'Гелик', setup: { ...CAR_SETUP, mass: 2560, inertia: 3300, a: 1.42, b: 1.46, grip: 3.15, power: 430000, driveForce: 22000, dragK: 1.3, brakeG: 1.45 }, engine: 'v8low', feel: { sense: 1.15, shake: 1.3, roll: 2.3 } },
+  gelik: { name: 'Гелик', note: 'Тяжёлый, мощный и валкий', setup: { ...CAR_SETUP, mass: 2560, inertia: 3300, a: 1.42, b: 1.46, grip: 3.15, power: 430000, driveForce: 22000, dragK: 1.3, brakeG: 1.45 }, engine: 'v8low', feel: { sense: 1.15, shake: 1.3, roll: 2.3 } },
   // лёгкие и небыстрые: разгоняются неохотно, зато в повороты ныряют легко — и на 90 км/ч уже страшно
-  lada: { name: 'Лада', setup: { ...CAR_SETUP, mass: 1090, inertia: 1000, a: 1.15, b: 1.35, grip: 3.05, power: 90000, driveForce: 5200, dragK: 0.6, brakeG: 1.35, gears: LADA_GEARS }, engine: 'i4', feel: { sense: 1.7, shake: 2.0, roll: 1.9 } },
-  seven: { name: 'Семёрка', setup: { ...CAR_SETUP, mass: 1030, inertia: 950, a: 1.12, b: 1.3, grip: 2.9, rearBias: 1.1, power: 70000, driveForce: 4400, dragK: 0.62, brakeG: 1.25, gears: LADA_GEARS }, engine: 'i4', feel: { sense: 1.9, shake: 2.4, roll: 2.5 } },
+  lada: { name: 'Лада', note: 'Лёгкая и юркая, разгоняется неспешно', setup: { ...CAR_SETUP, mass: 1090, inertia: 1000, a: 1.15, b: 1.35, grip: 3.05, power: 90000, driveForce: 5200, dragK: 0.6, brakeG: 1.35, gears: LADA_GEARS }, engine: 'i4', feel: { sense: 1.7, shake: 2.0, roll: 1.9 } },
+  seven: { name: 'Семёрка', note: 'Классика: медленно, валко и страшно', setup: { ...CAR_SETUP, mass: 1030, inertia: 950, a: 1.12, b: 1.3, grip: 2.9, rearBias: 1.1, power: 70000, driveForce: 4400, dragK: 0.62, brakeG: 1.25, gears: LADA_GEARS }, engine: 'i4old', feel: { sense: 1.9, shake: 2.4, roll: 2.5 } },
 };
 
 // угол колёс, доступный на скорости u

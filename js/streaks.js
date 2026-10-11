@@ -25,7 +25,7 @@ export class Streaks {
     const k = Math.max(0, Math.min(1, (v - 8) / 26));
     this.mesh.visible = k > 0.02;
     if (!this.mesh.visible) { this.fresh = true; return; }
-    this.mat.opacity = 0.5 * k;
+    this.mat.opacity = 0.3 * k;
     const fx = Math.sin(yaw), fz = Math.cos(yaw), len = 0.4 + v * 0.06, n = this.p.length / 3;
     this.q.setFromAxisAngle(this.up, yaw);
     for (let i = 0; i < n; i++) {

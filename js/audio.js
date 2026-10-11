@@ -9,10 +9,15 @@
 // Для седана — V8: главная 4-я гармоника и сильные неровные «полуторные», которые дают бурление.
 const ENGINES = {
   v10: { order: 2.5, rev: 1.15, main: [1, 0.7, 0.36, 0.2, 0.16, 0.1, 0.08, 0.06, 0.05, 0.04], half: [0.3, 0.35, 0.12, 0.12, 0, 0.16, 0.2, 0.18, 0.12, 0, 0.1, 0.08], top: [1, 0.5, 0.28, 0.15], topGain: 1.0, lp: [900, 0.55, 2600], noise: [1900, 0.6], drive: 2.4 },
-  // четыре цилиндра «Лады»: главная — 2-я гармоника, звук суше и жужжит
-  i4: { order: 2, rev: 1.0, main: [1, 0.62, 0.45, 0.3, 0.2, 0.14, 0.1, 0.07], half: [0.12, 0.3, 0.16, 0, 0.1, 0.18, 0.08], top: [1, 0.5, 0.3], topGain: 0.5, lp: [450, 0.5, 1700], noise: [1500, 0.34], drive: 3.4, smp: 0.3 },
-  // большой V8 внедорожника: тот же строй, но ниже и с тяжёлым рокотом
-  v8low: { order: 4, rev: 0.76, main: [1, 0.55, 0.34, 0.2, 0.12, 0.08, 0.05, 0.04], half: [0.16, 0.3, 0.45, 0.6, 0.36, 0.5, 0.3, 0, 0.18, 0.14], top: [1, 0.4, 0.2], topGain: 0.25, lp: [420, 0.36, 1600], noise: [1100, 0.46], drive: 3.2, smp: 1.4 },
+  // У каждого мотора свой строй. rev — насколько высоко он «поёт» на тех же оборотах, lp — как открывается звук,
+  // lump — неровность («ру-ру-ру»): какая доля громкости качается и на какой гармонике, smp — громкость записи
+  // настоящего V8 и до каких оборотов она слышна.
+  // 16-клапанная «четвёрка»: главная — 2-я гармоника, звук сухой, ровный, без визга
+  i4: { order: 2, rev: 0.78, main: [1, 0.55, 0.3, 0.2, 0.1, 0.06], half: [0.1, 0.34, 0.12, 0, 0.1, 0.2, 0.06], top: [1, 0.35, 0.15], topGain: 0.16, lp: [330, 0.26, 1100], noise: [900, 0.3], drive: 2.8, smp: 0.2, lump: [1, 0.1] },
+  // старая карбюраторная «четвёрка»: ниже, с дребезгом и тракторной неровностью
+  i4old: { order: 2, rev: 0.64, main: [1, 0.7, 0.5, 0.28, 0.2, 0.12, 0.08], half: [0.3, 0.5, 0.3, 0, 0.28, 0.34, 0.2, 0, 0.12], top: [1, 0.3], topGain: 0.06, lp: [260, 0.2, 800], noise: [650, 0.5], drive: 4.2, smp: 0.35, lump: [0.5, 0.3] },
+  // большой V8 внедорожника: низко, жирно, с рокотом — запись настоящего V8 слышна почти до отсечки
+  v8low: { order: 4, rev: 0.5, main: [1, 0.5, 0.26, 0.12, 0.06, 0.04], half: [0.5, 0.7, 0.75, 0.9, 0.5, 0.7, 0.4, 0, 0.2, 0.14], top: [1, 0.3], topGain: 0.04, lp: [240, 0.17, 800], noise: [520, 0.5], drive: 3.6, smp: 1.9, smpTo: 7600, lump: [0.5, 0.34] },
   v8: { order: 4, rev: 0.92, main: [1, 0.5, 0.3, 0.18, 0.1, 0.07, 0.05, 0.04], half: [0.1, 0.22, 0.35, 0.5, 0.3, 0.42, 0.25, 0, 0.15, 0.12], top: [1, 0.4, 0.2], topGain: 0.35, lp: [500, 0.4, 1800], noise: [1300, 0.4], drive: 3.0 },
 };
 
@@ -49,7 +54,11 @@ export class Sound {
     this.shaper.connect(this.engLp); this.engLp.connect(body); body.connect(this.engGain);
     const voice = () => { const o = ctx.createOscillator(), g = ctx.createGain(); g.gain.value = 0; o.connect(g); g.connect(this.shaper); o.start(); return { o, g }; };
     this.vMain = voice(); this.vHalf = voice(); this.vTop = voice();
-    this.engNoise = loop('bandpass', 1900, 0.55, this.engGain); // широкий шум впуска и выхлопа — без него мотор звучит как орган
+    this.engNoise = loop('bandpass', 1900, 0.55, this.engGain);
+    // неровность: громкость мотора слегка качается в такт оборотам — отсюда «ру-ру-ру» у больших и старых моторов
+    this.lump = ctx.createOscillator(); this.lump.type = 'sine'; this.lump.frequency.value = 8;
+    this.lumpG = ctx.createGain(); this.lumpG.gain.value = 0;
+    this.lump.connect(this.lumpG); this.lumpG.connect(this.engGain.gain); this.lump.start(); // широкий шум впуска и выхлопа — без него мотор звучит как орган
     this.setEngine(this.kind);
 
     this.squeal = loop('bandpass', 1900, 9);
@@ -61,8 +70,8 @@ export class Sound {
       src.connect(g); g.connect(this.master); src.start();
       this.smp[name] = { src, g };
     }).catch(() => { /* нет файла или формат не поддержан — остаёмся на синтезе */ });
-    sample('idle', 'assets/sound/v8-idle.wav?v=18');
-    sample('squeal', 'assets/sound/tire-squeal.wav?v=18');
+    sample('idle', 'assets/sound/v8-idle.wav?v=19');
+    sample('squeal', 'assets/sound/tire-squeal.wav?v=19');
     this.rainN = loop('highpass', 2600, 0.4);
     // сирена патруля: тон, который «качается» между двумя нотами
     this.sirenO = ctx.createOscillator(); this.sirenO.type = 'square'; this.sirenO.frequency.value = 700;
@@ -104,7 +113,11 @@ export class Sound {
     this.engLp.frequency.setTargetAtTime(E.lp[0] + rpm * E.lp[1] + throttle * E.lp[2], t, 0.05);
     this.engNoise.f.frequency.setTargetAtTime(E.noise[0] + rpm * 0.25, t, 0.1);
     this.engNoise.g.gain.setTargetAtTime(E.noise[1] * (0.15 + throttle) * (0.3 + k), t, 0.06);
-    this.engGain.gain.setTargetAtTime(active ? 0.05 + 0.05 * k + throttle * (0.1 + 0.07 * k) : 0, t, 0.07);
+    const vol = active ? 0.05 + 0.05 * k + throttle * (0.1 + 0.07 * k) : 0;
+    this.engGain.gain.setTargetAtTime(vol, t, 0.07);
+    const lump = E.lump || [0.5, 0];
+    this.lump.frequency.setTargetAtTime(Math.max(3, rot * lump[0]), t, 0.05);
+    this.lumpG.gain.setTargetAtTime(vol * lump[1] * (1 - 0.5 * k), t, 0.07);
     if (active) {
       // переключение вверх: тяга на миг пропадает и глухо «бухает» выхлоп
       if (gear > this.lastGear && throttle > 0.3) {
@@ -119,7 +132,7 @@ export class Sound {
     this.lastGear = gear; this.lastThr = throttle;
     // запись V8: на холостых звучит как есть, с оборотами ускоряется и выше 2200 об/мин постепенно уходит под синтез
     if (this.smp.idle) {
-      const fade = Math.max(0.2, Math.min(1, 1 - (rpm - 2200) / 3800));
+      const fade = Math.max(0.2, Math.min(1, 1 - (rpm - 2200) / ((E.smpTo || 6000) - 2200)));
       this.smp.idle.src.playbackRate.setTargetAtTime(Math.max(0.6, Math.min(5, rpm * E.rev / 1020)), t, 0.03);
       this.smp.idle.g.gain.setTargetAtTime(active ? fade * (0.1 + 0.1 * throttle) * (E.smp ?? (this.kind === 'v8' ? 1 : 0.6)) : 0, t, 0.07);
     }

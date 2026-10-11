@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -25,6 +25,7 @@
     <div class="box combo" id="comboBox"><span class="label">Серия</span><b id="combo">×1</b></div>
     <div class="box right"><span class="label" id="lapLabel">Круг 1 · до разворота</span><b id="left">0 м</b></div>
   </div>
+  <div id="mirror"></div>
   <div class="chips"><div class="chip" id="chase" hidden>ПОГОНЯ · <b id="chaseGap">0 м</b></div><div class="chip rain" id="rain" hidden>Дождь · скользко</div></div>
   <div id="pop"></div>
   <div class="tip turn" id="turnTip" hidden>← Разворот: в левый ряд</div>
@@ -69,20 +70,36 @@
   </div>
 </div>
 
-<div id="menu" class="overlay">
-  <div class="card">
-    <h1>Шашки · Краснодар</h1>
-    <p class="route">Красная по кругу: театр драмы ↔ «Аврора» · круг 5,5 км</p>
-    <div class="carpick"><button id="carPrev" aria-label="Предыдущая машина">‹</button><b id="carName">Седан</b><button id="carNext" aria-label="Следующая машина">›</button></div>
-    <div class="swatches" id="swatches"></div>
-    <button id="lightsBtn" class="ghost toggle">Светофоры: включены</button>
-    <div class="seg" id="ctlSeg" hidden><button data-m="arrows">Стрелки</button><button data-m="wheel">Руль</button><button data-m="tilt">Наклон</button></div>
-    <button id="go" class="primary">Поехали</button>
-    <p class="keys">«Моргнуть» (пробел) — машина впереди уступит полосу</p>
+<!-- главное меню: машина видна слева, справа — панель -->
+<div id="menu" class="screen">
+  <div class="brand">
+    <h1>ШАШКИ</h1>
+    <p>Краснодар · Красная · ночь</p>
     <p class="best" id="best"></p>
-    <a class="ghostlink" href="car.html">Посмотреть машину вблизи</a>
-    <p class="install" id="install" hidden>Чтобы убрать панели Safari: нажмите <b>Поделиться</b> → <b>На экран «Домой»</b> и запускайте игру с иконки</p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.18</p>
+  </div>
+  <div class="panel">
+    <button id="go" class="primary">Поехали</button>
+    <button id="garageBtn" class="rowbtn"><span>Автомобиль</span><b id="carName">Седан</b><i>›</i></button>
+    <div class="rowset"><span>Светофоры</span><button id="lightsBtn" class="switch" role="switch" aria-label="Светофоры"><i></i></button></div>
+    <div class="rowset" id="ctlRow"><span>Руль</span><div class="seg" id="ctlSeg"><button data-m="arrows">Стрелки</button><button data-m="wheel">Руль</button><button data-m="tilt">Наклон</button></div></div>
+    <p class="keys">Пробел — моргнуть, C — вид, Shift — старт со светофора</p>
+    <p class="install" id="install" hidden>Чтобы убрать панели Safari: <b>Поделиться</b> → <b>На экран «Домой»</b></p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.19</p>
+  </div>
+</div>
+
+<!-- гараж: выбор машины и цвета -->
+<div id="garage" class="screen" hidden>
+  <button id="garageBack" class="back">‹ Назад</button>
+  <div class="gpanel">
+    <div class="gpick">
+      <button id="carPrev" aria-label="Предыдущая машина">‹</button>
+      <div><b id="gName">Седан</b><span id="gNote"></span></div>
+      <button id="carNext" aria-label="Следующая машина">›</button>
+    </div>
+    <div class="gstats" id="gStats"></div>
+    <div class="swatches" id="swatches"></div>
+    <button id="gSelect" class="primary">Выбрать</button>
   </div>
 </div>
 
@@ -104,6 +121,6 @@
 <button id="viewBtn" aria-label="Сменить вид" title="Вид (C)">
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l1.5-2h9L18 8h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
 </button>
-<script type="module" src="js/main.js?v=18"></script>
+<script type="module" src="js/main.js?v=19"></script>
 </body>
 </html>

@@ -45,7 +45,7 @@ export class SpeedBlur {
     if (!this.on || k < 0.02) { r.setRenderTarget(null); r.render(scene, camera); return; }
     this.slow = dt > 0.028 ? this.slow + dt : Math.max(0, this.slow - dt * 0.5); // меньше ~36 кадров в секунду
     if (this.slow > 3) { this.on = false; r.setRenderTarget(null); r.render(scene, camera); return; }
-    this.mat.uniforms.k.value = 0.2 * k;
+    this.mat.uniforms.k.value = 0.1 * k;
     r.setRenderTarget(this.rt);
     r.render(scene, camera);
     r.setRenderTarget(null);

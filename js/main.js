@@ -1,20 +1,21 @@
 import * as THREE from 'three';
-import { buildWorld } from './world.js?v=18';
-import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=18';
-import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=18';
-import { makePlayerCar } from './playercar.js?v=18';
-import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=18';
-import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=18';
-import { Traffic } from './traffic.js?v=18';
-import { Input } from './input.js?v=18';
-import { Sound } from './audio.js?v=18';
-import { Loop } from './loop.js?v=18';
-import { Smoke } from './smoke.js?v=18';
-import { Signals } from './signals.js?v=18';
-import { Rain } from './weather.js?v=18';
-import { Chase } from './chase.js?v=18';
-import { Streaks } from './streaks.js?v=18';
-import { SpeedBlur } from './post.js?v=18';
+import { buildWorld } from './world.js?v=19';
+import { Car, alignSteer, steerLockAt, CARS } from './car.js?v=19';
+import { LANE_W, laneOffset, rowOffset, halfWidth } from './chain.js?v=19';
+import { makePlayerCar } from './playercar.js?v=19';
+import { nightEnvironment, SEDAN, COUPE } from './cardetail.js?v=19';
+import { GELIK, PRIORA, CLASSIC } from './vehicles.js?v=19';
+import { Traffic } from './traffic.js?v=19';
+import { Input } from './input.js?v=19';
+import { Sound } from './audio.js?v=19';
+import { Loop } from './loop.js?v=19';
+import { Smoke } from './smoke.js?v=19';
+import { Signals } from './signals.js?v=19';
+import { Rain } from './weather.js?v=19';
+import { Chase } from './chase.js?v=19';
+import { Streaks } from './streaks.js?v=19';
+import { SpeedBlur } from './post.js?v=19';
+import { Mirror } from './mirror.js?v=19';
 
 const $ = (id) => document.getElementById(id);
 const COLORS = [0xd92b2b, 0xf2f2f0, 0x15171a, 0x1f5fd0, 0xf0b400, 0x1f9d55, 0x7a2bd9];
@@ -31,6 +32,7 @@ const canvas = $('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
 const blur = new SpeedBlur(renderer);
+const mirror = new Mirror(renderer);
 const scene = new THREE.Scene();
 // ночное небо: тёмный верх, у горизонта — зарево города
 {
@@ -62,7 +64,7 @@ addEventListener('resize', resize);
 resize();
 
 // ---------- игра ----------
-const data = await (await fetch('data/krasnaya.json?v=18')).json();
+const data = await (await fetch('data/krasnaya.json?v=19')).json();
 const world = buildWorld(data, scene);
 const N = world.chains.north;
 const SPECS = { sedan: SEDAN, coupe: COUPE, gelik: GELIK, lada: PRIORA, seven: CLASSIC };
@@ -134,8 +136,8 @@ function launchCurve(setup) {
 traffic.launchAcc = launchCurve(CARS[carId].setup);
 
 // сменить машину: другая модель, другой характер и другой голос мотора
-function setCar(id) {
-  carId = id; store.set('car', id);
+function setCar(id, save = true) {
+  carId = id; if (save) store.set('car', id);
   scene.remove(model.root);
   model = makePlayerCar(color, world.glowTex, envMap, SPECS[id]);
   scene.add(model.root);
@@ -149,7 +151,7 @@ const G = {
   state: 'menu', // menu | drive | crash | finish
   score: 0, combo: 1, comboT: 0, near: 0, top: 0, time: 0, stateT: 0, lap: 1, grace: 0, turns: 0, blend: 1,
   launch: { ready: false, armed: false, greenAt: -1, boost: 0, stall: 0, was: 'g', cine: 0, cineOn: false, mix: 0, rivals: [], winAt: 0, line: null },
-  routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9, flashT: 0, push: 0, bank: 0, wheelTurn: 0, view: 0,
+  garage: false, orbit: 0, routeI: -1, shake: 0, camYaw: 0, wheelSpin: 0, roll: 0, pitch: 0, lift: 0, handsOff: 9, flashT: 0, push: 0, bank: 0, wheelTurn: 0, view: 0,
 };
 const inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, launch: false };
 const idle = { steer: 0, throttle: 0, brake: 0, handbrake: true };
@@ -213,7 +215,7 @@ function startRun() {
   if (lightsOn) signals.calm('north', world.startS);
   if (G.turns > 0) { traffic.setStalled('north', stalledSpots('north', Math.min(3, Math.ceil(G.turns / 2)))); }
   loop.intro(car, world); // срываемся с площадки на дорогу
-  $('menu').hidden = true; $('result').hidden = true; $('hud').hidden = false;
+  $('menu').hidden = true; $('garage').hidden = true; $('result').hidden = true; $('hud').hidden = false;
   $('drift').hidden = true;
   $('touch').hidden = !matchMedia('(pointer: coarse)').matches;
   sound.start();
@@ -238,7 +240,9 @@ const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padSt
 function showMenu() {
   G.state = 'menu';
   placeAtStart();
-  $('menu').hidden = false; $('result').hidden = true; $('hud').hidden = true; $('touch').hidden = true;
+  if (carId !== picked) setCar(picked, false);
+  G.garage = false;
+  $('menu').hidden = false; $('garage').hidden = true; $('result').hidden = true; $('hud').hidden = true; $('touch').hidden = true;
   const best = store.get('best', 0);
   $('best').textContent = best ? `Рекорд: ${best.toLocaleString('ru-RU')}` : '';
 }
@@ -550,43 +554,54 @@ function draw(dt) {
   // vs — скорость «по ощущению»: на «Семёрке» 90 км/ч подаются как почти 200 на купе
   const driving = G.state === 'drive', vs = v * feel.sense, spd = 1 - Math.exp(-vs / 16);
   G.push += ((driving && !loop.active ? Math.max(-12, Math.min(9, car.ax)) : 0) - G.push) * Math.min(1, dt * 3.2); // тяга и торможение, сглаженные
-  G.bank += ((driving ? Math.max(-0.05, Math.min(0.05, -car.ay * 0.0028)) : 0) - G.bank) * Math.min(1, dt * 4);
+  G.bank += ((driving ? Math.max(-0.022, Math.min(0.022, -car.ay * 0.0014)) : 0) - G.bank) * Math.min(1, dt * 4);
   G.shake *= Math.exp(-dt * 4);
   const now = performance.now() / 1000, sk = Math.min(1, vs / 52) ** 2 * feel.shake;
   const jx = (Math.sin(now * 31.7) + Math.sin(now * 47.3 + 1.3)) * 0.5, jy = (Math.sin(now * 39.1 + 0.7) + Math.sin(now * 57.9)) * 0.5; // дрожь — плавная, а не случайный шум
   // В меню камера медленно обходит машину спереди; на старте плавно перелетает на своё место.
-  const oa = car.yaw + 0.75 + Math.sin(now * 0.25) * 0.35;
-  const mx = car.x + Math.sin(oa) * 7.2, mz = car.z + Math.cos(oa) * 7.2, my = 1.5;
+  // В гараже камера ближе, машину можно крутить. Панель занимает правую часть экрана (в портрете — низ),
+  // поэтому смотрим чуть мимо машины, чтобы она встала в свободную часть кадра.
+  const tallCar = Math.max(0, model.spec.top(-0.3) - 1.47), rad = (G.garage ? 6.2 : 7.2) + tallCar * 2.2;
+  const oa = car.yaw + 0.75 + (G.garage ? now * 0.12 - G.orbit : Math.sin(now * 0.25) * 0.35);
+  const mx = car.x + Math.sin(oa) * rad, mz = car.z + Math.cos(oa) * rad, my = 1.5 + tallCar * 0.6;
+  const wide = camera.aspect > 1, sideShift = wide ? 1.7 : 0, mlx = car.x + Math.cos(oa) * sideShift, mlz = car.z - Math.sin(oa) * sideShift, mly = (wide ? 0.8 : 0.1) + tallCar * 0.3;
   if (driving && G.blend < 1) G.blend = Math.min(1, G.blend + dt / 2.6);
   const bl = G.state === 'menu' ? 0 : G.blend * G.blend * (3 - 2 * G.blend);
   const view = G.state === 'crash' || G.state === 'busted' ? 0 : G.view; // после аварии смотрим со стороны
   const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
   let px, py, pz, lx, ly, lz, fovBase, fovGain, amp;
   if (view === 0) {
-    const dist = 6.3 - 1.5 * spd + G.push * 0.11 + G.lift * 3.5, height = 1.95 - 0.5 * spd + G.lift * 4.5;
+    // камера стоит выше крыши и смотрит на дорогу далеко перед машиной: видно, что делается впереди
+    const tall = Math.max(0, model.spec.top(-0.3) - 1.47) * 1.4;
+    const dist = 6.7 - 0.9 * spd + G.push * 0.08 + G.lift * 3.5, height = 2.6 + tall - 0.3 * spd + G.lift * 4.5;
     px = car.x - cx * dist; pz = car.z - cz * dist; py = height;
-    lx = car.x + cx * 8; ly = 1.0; lz = car.z + cz * 8;
-    fovBase = 60; fovGain = 31; amp = 0.045;
+    lx = car.x + cx * 17; ly = 0.5 + tall * 0.5; lz = car.z + cz * 17;
+    fovBase = 60; fovGain = 24; amp = 0.016;
   } else if (view === 1) {
     const [h, f] = model.spec.hoodCam;
     px = car.x + fx * (f - G.push * 0.012); pz = car.z + fz * (f - G.push * 0.012); py = h - 0.06 * spd;
     lx = car.x + fx * 40; ly = 0.7; lz = car.z + fz * 40;
-    fovBase = 66; fovGain = 24; amp = 0.018;
+    fovBase = 66; fovGain = 18; amp = 0.007;
   } else {
     const [ex, ey, ez] = model.interior.eye, back = G.push * 0.006; // на разгоне вжимает в кресло
     px = car.x + fz * ex + fx * (ez - back); pz = car.z - fx * ex + fz * (ez - back); py = ey;
     const look = car.yaw + car.steer * 0.35; // взгляд чуть уходит в сторону поворота
     lx = px + Math.sin(look) * 30; ly = ey - 1.2; lz = pz + Math.cos(look) * 30;
-    fovBase = 68; fovGain = 20; amp = 0.01;
+    fovBase = 68; fovGain = 15; amp = 0.004;
   }
   const a = G.shake + sk * amp, rx = cz, rz = -cx; // дрожь — вбок и вверх-вниз
   px += rx * jx * a + (Math.random() - 0.5) * G.shake; py += jy * a * 0.7 + (Math.random() - 0.5) * G.shake; pz += rz * jx * a + (Math.random() - 0.5) * G.shake;
   camera.position.set(mx + (px - mx) * bl, my + (py - my) * bl, mz + (pz - mz) * bl);
-  camera.lookAt(car.x + (lx - car.x) * bl, 0.8 + (ly - 0.8) * bl, car.z + (lz - car.z) * bl);
-  camera.rotateZ((G.bank + jx * sk * 0.004 + (view ? G.roll * 0.6 : 0)) * bl);
+  camera.lookAt(mlx + (lx - mlx) * bl, mly + (ly - mly) * bl, mlz + (lz - mlz) * bl);
+  camera.rotateZ((G.bank + jx * sk * 0.0012 + (view ? G.roll * 0.5 : 0)) * bl);
   // салон виден только изнутри; из-за руля ближняя граница обзора ближе, иначе руль и приборы обрежет
   const inside = view === 2 && bl > 0.97 && G.launch.mix < 0.03 && !G.freeCam;
-  if (model.interior.group.visible !== inside) model.interior.group.visible = inside;
+  if (model.interior.group.visible !== inside) {
+    model.interior.group.visible = inside;
+    // изнутри кузов виден с изнанки: без этого сквозь капот и стойки просвечивала бы дорога
+    model.mats.paint.side = model.mats.dark.side = inside ? THREE.DoubleSide : THREE.FrontSide;
+    model.mats.paint.needsUpdate = model.mats.dark.needsUpdate = true;
+  }
   const near = view !== 0 && bl > 0.97 && !G.freeCam ? 0.12 : 0.6;
   if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
   if (inside) {
@@ -606,7 +621,7 @@ function draw(dt) {
   }
   if (G.freeCam) { const f = G.freeCam; camera.position.set(f[0], f[1], f[2]); camera.lookAt(f[3], f[4], f[5]); } // отладка: свободная камера
   // угол обзора раскрывается уже к 60–80 км/ч и дополнительно «дышит» на разгоне и торможении
-  const fov = fovBase + fovGain * spd + G.push * 0.55;
+  const fov = fovBase + fovGain * spd + G.push * 0.4;
   if (Math.abs(fov - camera.fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 5); camera.updateProjectionMatrix(); }
   $('vig').style.opacity = G.state === 'drive' ? Math.max(0, Math.min(1, (v - 18) / 45)).toFixed(2) : '0';
 
@@ -661,7 +676,11 @@ function draw(dt) {
   $('cops').style.opacity = chase.active && G.state === 'drive' && chase.gap < 90 ? (0.55 * (1 - chase.gap / 90) * (Math.floor(chase.flash * 5) % 2 ? 1 : 0.35)).toFixed(2) : '0';
   $('cops').classList.toggle('blue', Math.floor(chase.flash * 5) % 2 === 0);
   sound.update(car.rpm, G.state === 'drive' ? (G.launch.rev ? 1 : inp.throttle) : 0, Math.max(car.slip, hardBrake * (0.75 - 0.5 * rain.wet)), v, G.state === 'drive', car.gear);
-  blur.render(scene, camera, driving && !G.freeCam ? Math.min(1, Math.max(0, (v * CARS[carId].feel.sense - 9) / 38) + Math.max(0, G.push) * 0.035) : 0, dt);
+  // зеркало заднего вида — во всех видах, кроме пролёта перед стартом
+  const showMirror = driving && !G.freeCam && bl > 0.95 && G.launch.mix < 0.15;
+  if ($('mirror').hidden === showMirror) $('mirror').hidden = !showMirror;
+  blur.render(scene, camera, driving && !G.freeCam ? Math.min(1, Math.max(0, (v * CARS[carId].feel.sense - 16) / 48) + Math.max(0, G.push) * 0.02) : 0, dt);
+  if (showMirror) mirror.render(scene, car.x, car.z, car.yaw, model.type.len / 2, 1.2 + Math.max(0, model.spec.top(-0.3) - 1.47) * 0.8, $('mirror').getBoundingClientRect());
 }
 
 let last = performance.now(), clockAt = 0;
@@ -674,13 +693,16 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-// ---------- меню ----------
+// ---------- меню и гараж ----------
+// Быстрые кнопки срабатывают по касанию, а не по отпусканию: так они не «проглатывают» частые нажатия.
+const tap = (id, fn) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); fn(e); });
 const sw = $('swatches');
 COLORS.forEach((c) => {
   const b = document.createElement('button');
   b.style.background = '#' + c.toString(16).padStart(6, '0');
   b.classList.toggle('sel', c === color);
-  b.addEventListener('click', () => {
+  b.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
     color = c; store.set('color', c); model.setColor(c);
     for (const o of sw.children) o.classList.toggle('sel', o === b);
   });
@@ -689,21 +711,61 @@ COLORS.forEach((c) => {
 // вид: сзади → с капота → из-за руля
 function nextView() { G.view = (G.view + 1) % 3; store.set('view', G.view); }
 G.view = store.get('view', 0) % 3;
-$('viewBtn').addEventListener('click', nextView);
-const paintCar = () => { $('carName').textContent = CARS[carId].name; };
-for (const [id, step] of [['carPrev', -1], ['carNext', 1]]) $(id).addEventListener('click', () => {
+tap('viewBtn', nextView);
+
+// характеристики машины для гаража: разгон и максималку меряем на той же физике, что и в игре
+const statCache = {};
+function carStats(id) {
+  if (statCache[id]) return statCache[id];
+  const probe = new Car(CARS[id].setup), full = { steer: 0, throttle: 1, brake: 0, handbrake: false };
+  probe.reset(0, 0, 0);
+  let t100 = 0;
+  for (let i = 0; i < 240 * 36; i++) { probe.step(1 / 240, full); if (!t100 && probe.speed >= 27.78) t100 = (i + 1) / 240; }
+  return (statCache[id] = { t100, top: probe.speed * 3.6, mass: CARS[id].setup.mass, roll: CARS[id].feel.roll });
+}
+let picked = carId; // машина, на которой поедем; в гараже можно примерить другую и не выбрать
+const paintCar = () => { $('carName').textContent = CARS[picked].name; };
+function paintGarage() {
+  const c = CARS[carId], st = carStats(carId);
+  $('gName').textContent = c.name; $('gNote').textContent = c.note;
+  const rows = [
+    ['Разгон 0–100', (9.5 - st.t100) / 7, st.t100.toFixed(1).replace('.', ',') + ' с'],
+    ['Максималка', st.top / 350, Math.round(st.top / 5) * 5 + ' км/ч'],
+    ['Устойчивость', 1.08 - st.roll / 2.9, st.roll < 0.7 ? 'как рельсы' : st.roll < 1.5 ? 'ровная' : 'валкая'],
+    ['Масса', st.mass / 2700, (st.mass / 1000).toFixed(2).replace('.', ',') + ' т'],
+  ];
+  $('gStats').innerHTML = rows.map(([n, k, v]) => `<div><span>${n}</span><em><u style="width:${Math.round(Math.max(0.06, Math.min(1, k)) * 100)}%"></u></em><b>${v}</b></div>`).join('');
+  $('gSelect').textContent = carId === picked ? 'Выбрано' : 'Выбрать';
+}
+function stepCar(step) {
   const ids = Object.keys(CARS);
-  setCar(ids[(ids.indexOf(carId) + step + ids.length) % ids.length]);
-  paintCar();
-});
+  setCar(ids[(ids.indexOf(carId) + step + ids.length) % ids.length], false);
+  paintGarage();
+}
+function openGarage(open) {
+  G.garage = open; G.orbit = 0;
+  $('garage').hidden = !open; $('menu').hidden = open;
+  if (open) paintGarage();
+  else if (carId !== picked) setCar(picked, false); // ушли, не выбрав — возвращаем свою
+}
+tap('carPrev', () => stepCar(-1));
+tap('carNext', () => stepCar(1));
+$('garageBtn').addEventListener('click', () => openGarage(true));
+$('garageBack').addEventListener('click', () => openGarage(false));
+$('gSelect').addEventListener('click', () => { picked = carId; store.set('car', picked); paintCar(); openGarage(false); });
+// в гараже машину можно покрутить пальцем или мышью
+let dragX = null;
+canvas.addEventListener('pointerdown', (e) => { if (G.garage) dragX = e.clientX; });
+addEventListener('pointermove', (e) => { if (dragX !== null && G.garage) { G.orbit += (e.clientX - dragX) * 0.008; dragX = e.clientX; } });
+addEventListener('pointerup', () => { dragX = null; });
 paintCar();
 // способ рулить на экране телефона: стрелки, руль или наклон
 const paintCtl = () => { for (const b of $('ctlSeg').children) b.classList.toggle('sel', b.dataset.m === input.mode); };
 for (const b of $('ctlSeg').children) b.addEventListener('click', () => { input.setMode(b.dataset.m); store.set('ctl', input.mode); paintCtl(); });
 input.setMode(store.get('ctl', 'arrows'));
-$('ctlSeg').hidden = !coarse;
+$('ctlRow').hidden = !coarse;
 paintCtl();
-const paintLights = () => { $('lightsBtn').textContent = lightsOn ? 'Светофоры: включены' : 'Светофоры: выключены'; $('lightsBtn').classList.toggle('off', !lightsOn); };
+const paintLights = () => { $('lightsBtn').classList.toggle('on', lightsOn); $('lightsBtn').setAttribute('aria-checked', lightsOn); };
 $('lightsBtn').addEventListener('click', () => { lightsOn = !lightsOn; store.set('lights', lightsOn); paintLights(); });
 paintLights();
 $('go').addEventListener('click', startRun);
@@ -722,7 +784,8 @@ document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: fal
 let lastTouchEnd = 0;
 document.addEventListener('touchend', (e) => {
   const now = performance.now();
-  if (now - lastTouchEnd < 350) e.preventDefault();
+  // двойное касание увеличивало страницу — гасим его, но только мимо кнопок: иначе второе быстрое нажатие на кнопку пропадало
+  if (now - lastTouchEnd < 350 && !(e.target.closest && e.target.closest('button, .seg, .swatches, .steer'))) e.preventDefault();
   lastTouchEnd = now;
 }, { passive: false });
 document.addEventListener('dblclick', (e) => e.preventDefault());
