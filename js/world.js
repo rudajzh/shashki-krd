@@ -2,8 +2,8 @@
 // и витринами, бульвар, фонари с пятнами света, светофоры, ограждения боковых улиц.
 // Отдаёт проверки столкновений: со зданиями (hitsSolid) и с бордюром (offRoad).
 import * as THREE from 'three';
-import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=23';
-import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=23';
+import { Chain, LANE_W, halfWidth, laneOffset } from './chain.js?v=24';
+import { buildLandmarks, CUSTOM_BUILDINGS } from './landmarks.js?v=24';
 
 const ROAD_W = { primary: 10.5, secondary: 9, tertiary: 7.5, residential: 6.5, unclassified: 6, living_street: 5, service: 3.6, pedestrian: 5 };
 const WALLS = [0xe8dcc0, 0xf0e2b6, 0xe6c9a8, 0xd9d4c8, 0xcfd6dc, 0xe9b89a, 0xc9b79c, 0xf2ead8, 0xb9c4b4, 0xd8a48a];
@@ -740,6 +740,11 @@ export function buildWorld(data, scene) {
       const [tx, tz] = at(wN + 1.6 + (free - 3.2) * r);
       treePos.push([tx + (rnd() - 0.5) * 1.2, tz + (rnd() - 0.5) * 1.2]);
     }
+  }
+  // на проезжей части боковых улиц (там, где они пересекают бульвар) деревьев быть не может
+  for (let i = treePos.length - 1; i >= 0; i--) {
+    const [x, z] = treePos[i];
+    if (crossings.some((c) => !c.ped && Math.abs((x - c.x) * c.dx + (z - c.z) * c.dz) < c.half + 2.5 && Math.abs((x - c.x) * c.dz - (z - c.z) * c.dx) < 75)) treePos.splice(i, 1);
   }
   const trunkG = new THREE.CylinderGeometry(0.16, 0.22, 2.6, 6);
   trunkG.translate(0, 1.3, 0);

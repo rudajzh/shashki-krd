@@ -10,9 +10,6 @@ canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: blo
 .box .label { display: block; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; }
 .box b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .box.right { margin-left: auto; text-align: right; }
-.box.combo { opacity: 0.35; transition: opacity 0.2s, transform 0.2s; }
-.box.combo.live { opacity: 1; background: rgba(214, 72, 28, 0.88); }
-.box.combo.bump { transform: scale(1.14); }
 
 #pop { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); font-weight: 900; font-size: clamp(22px, 5vw, 40px); text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6); white-space: nowrap; opacity: 0; }
 #pop.show { animation: pop 0.9s ease-out; }
@@ -231,3 +228,90 @@ button.primary.locked { background: linear-gradient(180deg, #3a4150, #262b36); b
 #pause .card h1 { text-align: center; margin-bottom: 4px; }
 #pause .card button.ghost { margin: 0; }
 #mirror { border-radius: 12px; }
+
+/* ---------- монеты и награды ---------- */
+:root { --ui: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; }
+.coin { display: inline-block; width: 1em; height: 1em; border-radius: 50%; vertical-align: -0.13em; margin-right: 0.32em; flex: none;
+  background: radial-gradient(circle at 34% 30%, #fff6c2 0%, #ffd34a 38%, #f0a400 72%, #b87200 100%); box-shadow: inset 0 0 0 0.09em #a86700, inset 0 0 0 0.2em rgba(255, 236, 150, 0.9), 0 0.06em 0.12em rgba(0, 0, 0, 0.5); }
+.cash { display: inline-flex; align-items: center; }
+#fx { position: fixed; inset: 0; pointer-events: none; z-index: 8; overflow: hidden; }
+.fly { position: absolute; left: 0; top: 0; font: italic 900 clamp(24px, 4.6vw, 40px)/1 var(--ui); white-space: nowrap; text-align: center; color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 18px rgba(255, 255, 255, 0.45); will-change: transform, opacity; }
+.fly small { display: block; font-size: 0.42em; letter-spacing: 0.14em; text-transform: uppercase; font-style: normal; margin-bottom: 3px; opacity: 0.95; }
+.fly.tight { color: #ffb347; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 22px rgba(255, 140, 40, 0.9); }
+.fly.head { color: #ff5a4a; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 26px rgba(255, 60, 40, 0.95); font-size: clamp(30px, 5.6vw, 50px); }
+.fly.big { color: #ffd34a; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55), 0 0 26px rgba(255, 200, 60, 0.9); font-size: clamp(30px, 5.6vw, 50px); }
+.flycoin { position: absolute; left: -11px; top: -11px; width: 22px; height: 22px; margin: 0; will-change: transform; }
+.edge { position: absolute; top: 0; bottom: 0; width: 26vw; opacity: 0; pointer-events: none; }
+.edge.l { left: 0; background: linear-gradient(90deg, rgba(255, 255, 255, 0.5), transparent); }
+.edge.r { right: 0; background: linear-gradient(270deg, rgba(255, 255, 255, 0.5), transparent); }
+.edge.l.tight { background: linear-gradient(90deg, rgba(255, 150, 40, 0.7), transparent); }
+.edge.r.tight { background: linear-gradient(270deg, rgba(255, 150, 40, 0.7), transparent); }
+.edge.l.head { background: linear-gradient(90deg, rgba(255, 50, 30, 0.8), transparent); }
+.edge.r.head { background: linear-gradient(270deg, rgba(255, 50, 30, 0.8), transparent); }
+
+/* счёт и кошелёк */
+.scorebox { display: grid; grid-template-columns: auto auto; column-gap: 12px; align-items: baseline; transform-origin: 0 0; }
+.scorebox .label { grid-column: 1 / 3; }
+.wallet { display: inline-flex; align-items: center; font-size: 17px; color: #ffd34a; transform-origin: 0 50%; }
+.wallet b { font-size: 17px; }
+/* серия: кольцо догорает за пять секунд */
+.combo { position: relative; width: 58px; height: 58px; flex: none; opacity: 0.3; transition: opacity 0.2s; }
+.combo svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.combo circle { fill: rgba(12, 16, 22, 0.62); stroke-width: 5; }
+.combo .track { stroke: rgba(255, 255, 255, 0.14); }
+.combo .ring { fill: none; stroke: #fff; stroke-linecap: round; }
+.combo b { position: absolute; inset: 0; display: grid; place-items: center; font: italic 900 21px/1 var(--ui); }
+.combo.live { opacity: 1; }
+.combo.live .ring { stroke: #ffd34a; }
+.combo.live b { color: #ffd34a; }
+.combo.hot .ring { stroke: #ff8a2a; } .combo.hot b { color: #ff8a2a; } .combo.hot { filter: drop-shadow(0 0 8px rgba(255, 138, 42, 0.7)); }
+.combo.max .ring { stroke: #ff4530; } .combo.max b { color: #ff4530; } .combo.max { filter: drop-shadow(0 0 12px rgba(255, 69, 48, 0.9)); }
+/* спидометр: полоска «нагрева» — скорость приносит очки */
+.speed u { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; text-decoration: none; }
+.speed u s { display: block; height: 100%; width: 0; border-radius: 2px; background: linear-gradient(90deg, #ffd34a, #ff8a2a 60%, #ff4530); text-decoration: none; }
+.speed.paying { box-shadow: 0 0 0 1px rgba(255, 211, 74, 0.35), 0 0 18px rgba(255, 170, 60, 0.25); }
+
+/* большая плашка: событие и его цена */
+#banner { position: absolute; left: 50%; top: 27%; transform: translate(-50%, -50%) skewX(-8deg); text-align: center; opacity: 0; pointer-events: none; white-space: nowrap; }
+#banner b { display: block; font: italic 900 clamp(26px, 6vw, 54px)/1 var(--ui); letter-spacing: 0.02em; text-transform: uppercase; -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.5)); padding: 0 8px; }
+#banner span { display: inline-flex; align-items: center; margin-top: 6px; padding: 4px 14px; border-radius: 999px; background: rgba(8, 10, 14, 0.72); font: 800 clamp(15px, 2.6vw, 22px)/1.2 var(--ui); font-variant-numeric: tabular-nums; }
+#banner span:empty { display: none; }
+#banner.gold b { background-image: linear-gradient(180deg, #fff8cf 20%, #ffd34a 55%, #f09a00 100%); }
+#banner.gold span { color: #ffd34a; }
+#banner.silver b { background-image: linear-gradient(180deg, #fff 25%, #c9d3e0 100%); }
+#banner.hot b { background-image: linear-gradient(180deg, #ffe2b0 20%, #ff8a2a 60%, #e5431a 100%); }
+#banner.hot span { color: #ffb347; }
+#banner.blue b { background-image: linear-gradient(180deg, #e6f1ff 20%, #6fb0ff 60%, #2a62ff 100%); }
+#banner.blue span { color: #9cc6ff; }
+#banner.red b { background-image: linear-gradient(180deg, #ffd0c8 20%, #ff5a4a 60%, #c81e12 100%); }
+#banner.show { animation: banner 1.7s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+@keyframes banner { 0% { opacity: 0; transform: translate(-50%, -50%) skewX(-8deg) scale(1.9); } 9% { opacity: 1; transform: translate(-50%, -50%) skewX(-8deg) scale(0.96); } 14% { transform: translate(-50%, -50%) skewX(-8deg) scale(1); } 78% { opacity: 1; transform: translate(-50%, -50%) skewX(-8deg) scale(1); } 100% { opacity: 0; transform: translate(-50%, -62%) skewX(-8deg) scale(1); } }
+/* место в заезде со светофора */
+#place { position: absolute; right: max(14px, env(safe-area-inset-right)); top: 34%; display: flex; align-items: baseline; gap: 6px; padding: 6px 14px 8px; border-radius: 14px; background: rgba(12, 16, 22, 0.7); transform-origin: 100% 50%; }
+#place b { font: italic 900 44px/1 var(--ui); }
+#place span { font-size: 13px; opacity: 0.7; letter-spacing: 0.06em; text-transform: uppercase; }
+#place.first b { color: #ffd34a; text-shadow: 0 0 18px rgba(255, 200, 60, 0.7); }
+.tip .prize { display: inline-flex; align-items: center; margin-left: 10px; padding: 2px 9px; border-radius: 999px; background: rgba(0, 0, 0, 0.45); color: #ffd34a; font-style: normal; font-weight: 700; }
+.tip .prize b { margin-left: 4px; }
+#pop { font-size: clamp(16px, 3vw, 24px); top: 38%; font-weight: 700; opacity: 0; }
+
+/* итог заезда: счёт и из чего он сложился */
+.total { margin: 10px 0 8px; }
+.total span { display: block; font-size: 11px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.08em; }
+.total b { font: italic 900 44px/1 var(--ui); font-variant-numeric: tabular-nums; }
+.parts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 0 0 10px; }
+.parts div { position: relative; overflow: hidden; background: rgba(255, 255, 255, 0.07); border-radius: 12px; padding: 8px 2px 9px; display: grid; justify-items: center; gap: 3px; }
+.parts div.zero { opacity: 0.35; }
+.parts svg { width: 22px; height: 22px; color: #ffd34a; }
+.parts b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.parts span { font-size: 9.5px; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.parts u { position: absolute; left: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, #ffd34a, #ff8a2a); transition: width 0.7s ease-out; }
+.earn { display: flex; align-items: center; justify-content: center; font-size: 26px; }
+@media (max-height: 430px) { .total b { font-size: 32px; } .total { margin: 4px 0 6px; } .parts div { padding: 5px 2px 7px; } .parts svg { width: 18px; height: 18px; } .earn { font-size: 21px; margin: 2px 0 6px !important; } #result .card h1 { font-size: 22px; } }
+@media (max-width: 720px) { .scorebox { grid-template-columns: auto; } .scorebox .label { grid-column: 1; } .combo { width: 50px; height: 50px; } .combo b { font-size: 18px; } }
+/* телефон в горизонтали: итог слева, кнопки справа — всё помещается без прокрутки */
+@media (max-height: 460px) and (orientation: landscape) {
+  #result .card { width: min(760px, 100%); display: grid; grid-template-columns: 1.35fr 1fr; column-gap: 20px; align-items: center; padding: 14px 18px; }
+  #result .resActs .gbuy { flex-direction: column; }
+  #result .route { font-size: 13px; }
+}

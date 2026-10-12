@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -21,19 +21,25 @@
 
 <div id="hud" hidden>
   <div class="hud-top">
-    <div class="box"><span class="label">Очки</span><b id="score">0</b></div>
-    <div class="box combo" id="comboBox"><span class="label">Серия</span><b id="combo">×1</b></div>
+    <div class="box scorebox" id="scoreBox"><span class="label">Очки</span><b id="score">0</b><span class="wallet" id="wallet"><i class="coin"></i><b id="runCoins">0</b></span></div>
+    <!-- серия: множитель и кольцо-таймер — пока оно не догорело, следующий проход впритирку поднимет множитель -->
+    <div class="combo" id="comboBox"><svg viewBox="0 0 48 48"><circle class="track" cx="24" cy="24" r="20"/><circle class="ring" id="comboRing" cx="24" cy="24" r="20"/></svg><b id="combo">×1</b></div>
     <div class="box right"><span class="label" id="lapLabel">Круг 1 · до разворота</span><b id="left">0 м</b></div>
   </div>
   <div id="mirror"></div>
   <div class="chips"><div class="chip" id="chase" hidden>ПОГОНЯ · <b id="chaseGap">0 м</b></div><div class="chip rain" id="rain" hidden>Дождь · скользко</div></div>
   <div id="pop"></div>
+  <div class="edge l" id="edgeL"></div><div class="edge r" id="edgeR"></div>
+  <div id="banner"><b id="bannerT"></b><span id="bannerS"></span></div>
+  <div id="place" hidden><b id="placeN">1</b><span id="placeOf">из 3</span></div>
   <div class="tip turn" id="turnTip" hidden>← Разворот: в левый ряд</div>
-  <div class="tip" id="launchTip" hidden>Ты первый! Зажми газ и ЛАНЧ (Shift)</div>
+  <div class="tip" id="launchTip" hidden><span id="launchTipText">Ты первый! Зажми газ и ЛАНЧ (Shift)</span><em class="prize"><i class="coin"></i>до <b id="launchPrize">0</b></em></div>
   <div id="lights" hidden><i></i><i></i><i></i><i></i><i></i><b id="lightsText">ДЕРЖИ…</b></div>
-  <div class="speed"><b id="speed">0</b><span>км/ч</span><i id="gear">1</i></div>
+  <div class="speed" id="speedBox"><b id="speed">0</b><span>км/ч</span><i id="gear">1</i><u><s id="heat"></s></u></div>
   <div class="hint" id="rotate">Поверните телефон горизонтально</div>
 </div>
+
+<div id="fx"></div>
 
 <div id="touch" hidden data-mode="arrows">
   <div class="pad left">
@@ -79,14 +85,14 @@
   </div>
   <div class="panel">
     <button id="go" class="primary">Поехали</button>
-    <div class="rowset"><span>Баланс</span><b class="cash" id="cash">0 ₽</b></div>
+    <div class="rowset"><span>Монеты</span><b class="cash" id="cash">0</b></div>
     <button id="garageBtn" class="rowbtn"><span>Автомобиль</span><b id="carName">Седан</b><i>›</i></button>
     <div class="rowset"><span>Светофоры</span><button id="lightsBtn" class="switch" role="switch" aria-label="Светофоры"><i></i></button></div>
     <div class="rowset"><span>Звук</span><button id="soundBtn" class="switch" role="switch" aria-label="Звук"><i></i></button></div>
     <div class="rowset" id="ctlRow"><span>Руль</span><div class="seg" id="ctlSeg"><button data-m="arrows">Стрелки</button><button data-m="wheel">Руль</button><button data-m="tilt">Наклон</button></div></div>
     <p class="keys">Пробел — моргнуть, C — вид, Shift — старт со светофора</p>
     <p class="install" id="install" hidden>Чтобы убрать панели Safari: <b>Поделиться</b> → <b>На экран «Домой»</b></p>
-    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.23</p>
+    <p class="osm">Карта: © OpenStreetMap contributors · версия 0.24</p>
   </div>
 </div>
 
@@ -94,7 +100,7 @@
 <div id="garage" class="screen" hidden>
   <button id="garageBack" class="back">‹ Назад</button>
   <div class="gpanel">
-    <div class="gcash"><span>Баланс</span><b class="cash" id="gCash">0 ₽</b></div>
+    <div class="gcash"><span>Монеты</span><b class="cash" id="gCash">0</b></div>
     <div class="gpick">
       <button id="carPrev" aria-label="Предыдущая машина">‹</button>
       <div><b id="gName">Седан</b><span id="gNote"></span></div>
@@ -110,17 +116,19 @@
 
 <div id="result" class="overlay" hidden>
   <div class="card">
-    <h1 id="resTitle">Авария</h1>
-    <p class="route" id="resText"></p>
-    <div class="stats">
-      <div><span>Очки</span><b id="resScore">0</b></div>
-      <div><span>Впритирку</span><b id="resNear">0</b></div>
-      <div><span>Круг</span><b id="resTop">1</b></div>
+    <div class="resInfo">
+      <h1 id="resTitle">Авария</h1>
+      <p class="route" id="resText"></p>
+      <div class="total"><span>Очки</span><b id="resScore">0</b></div>
+      <!-- из чего сложились очки: у каждой плитки свой значок, полоска показывает её долю -->
+      <div class="parts" id="resParts"></div>
+      <p class="earn" id="resCash"></p>
     </div>
-    <p class="earn" id="resCash"></p>
-    <div class="gbuy"><button id="resContinue" class="ghost">Продолжить за ролик</button><button id="resDouble" class="ghost">×2 за ролик</button></div>
-    <button id="again" class="primary">Ещё раз</button>
-    <button id="toMenu" class="ghost">В меню</button>
+    <div class="resActs">
+      <div class="gbuy"><button id="resContinue" class="ghost">Продолжить за ролик</button><button id="resDouble" class="ghost">×2 за ролик</button></div>
+      <button id="again" class="primary">Ещё раз</button>
+      <button id="toMenu" class="ghost">В меню</button>
+    </div>
   </div>
 </div>
 
@@ -138,6 +146,6 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=23"></script>
+<script type="module" src="js/main.js?v=24"></script>
 </body>
 </html>

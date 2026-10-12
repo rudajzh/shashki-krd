@@ -1,12 +1,12 @@
 // Кольцо: у «Авроры» машина уходит налево на Офицерскую, огибает кинотеатр и встаёт на встречную полосу,
-// на юге — разворачивается на месте перед гостиницей. Пока идёт разворот, по пути машину ведёт игра,
+// на юге — разворачивается из левого ряда напротив площади. Пока идёт разворот, по пути машину ведёт игра,
 // а игрок быстрыми нажатиями держит занос: не нажимает — машина просто спокойно поворачивает.
-import { laneOffset, halfWidth } from './chain.js?v=23';
+import { laneOffset, halfWidth, LANE_W } from './chain.js?v=24';
 
 const CAP = 26, BRAKE = 13, ALAT = 20; // потолок скорости на развороте, торможение и боковое ускорение, под которое подбирается скорость в дуге
 
 // гладкая кривая через точки (Катмулл — Ром), на выходе — точки примерно через 0,5 м
-function spline(ctrl) {
+export function spline(ctrl) {
   const out = [];
   for (let i = 0; i < ctrl.length - 1; i++) {
     const p0 = ctrl[Math.max(0, i - 1)], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
@@ -43,6 +43,12 @@ export class Loop {
     return [o.x + o.dz * off, o.z - o.dx * off];
   }
 
+  // точка на полосе связки: side 1 — на ряд левее оси (внутренняя полоса), −1 — правее (внешняя)
+  linkLane(i, side) {
+    const L = this.link, a = L[Math.max(0, i - 1)], b = L[Math.min(L.length - 1, i + 1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [L[i][0] + (b[1] - a[1]) / l * LANE_W * side, L[i][1] - (b[0] - a[0]) / l * LANE_W * side];
+  }
+
   // сколько метров до ближайшего разворота (для табло)
   distance(proj) {
     const n = proj.north, s = proj.south;
@@ -62,39 +68,39 @@ export class Loop {
       // К левой полосе, затем по связке на Офицерскую и на встречную. Первые 25 м связки пропускаем:
       // там её ось ещё совпадает с осью Красной, и путь из левой полосы вильнул бы вправо.
       // Последние метры тоже: срезаем прямой угол на выезде, чтобы дуга была шире.
+      // Игрок идёт по внутренней полосе связки (она продолжает левый ряд Красной), поток — по двум внешним.
       const ctrl = [here, ahead];
       if (this.linkS - n.s > 30) ctrl.push(this.lanePoint(this.N, this.linkS - 12, 9));
-      ctrl.push(this.lanePoint(this.N, this.linkS + 8, 9, -1.2));
       const last = this.link.length - 8;
-      for (let i = 6; i <= last; i += 2) ctrl.push(this.link[i]);
+      for (let i = 1; i <= last; i += 2) ctrl.push(this.linkLane(i, 1));
       // выезд на встречную — широкой дугой: от конца связки к полосе, через точку, где сходятся их направления
-      const A = this.link[last], A0 = this.link[last - 2], B = this.lanePoint(this.S, 40, 1), B1 = this.lanePoint(this.S, 52, 1);
+      const A = this.linkLane(last, 1), A0 = this.linkLane(last - 2, 1), B = this.lanePoint(this.S, 40, 2), B1 = this.lanePoint(this.S, 52, 2);
       const ax = A[0] - A0[0], az = A[1] - A0[1], bx = B1[0] - B[0], bz = B1[1] - B[1], den = ax * bz - az * bx;
       const t = Math.abs(den) > 1e-6 ? ((B[0] - A[0]) * bz - (B[1] - A[1]) * bx) / den : 0.5;
       const C = [A[0] + ax * t, A[1] + az * t];
       for (const u of [0.25, 0.5, 0.75]) ctrl.push([(1 - u) * (1 - u) * A[0] + 2 * u * (1 - u) * C[0] + u * u * B[0], (1 - u) * (1 - u) * A[1] + 2 * u * (1 - u) * C[1] + u * u * B[1]]);
-      ctrl.push(B, this.lanePoint(this.S, 64, 1), this.lanePoint(this.S, 92, 1));
+      ctrl.push(B, this.lanePoint(this.S, 64, 2), this.lanePoint(this.S, 92, 2));
       this.begin('north', spline(ctrl), car, 9, 0.5);
       this.active.hold = ['south', 0, 660, 100];
       this.active.gates = [];
     } else if (onS && s.s < this.southS + 4) {
       const need = Math.max(46, (v * v - 100) / (2 * BRAKE) + 28);
       if (this.southS - s.s > need) return;
-      // широкая дуга от правого бордюра южной стороны до правого бордюра северной
-      const a = this.lanePoint(this.S, this.southS, 0, 1.0);
+      // разворот из левого ряда — как его и делают напротив площади: дуга из левого ряда южной стороны к правому бордюру северной
+      const a = this.lanePoint(this.S, this.southS, 9);
       this.N.project(a[0], a[1], -1, this.tmp);
-      const sN = this.tmp.s, b = this.lanePoint(this.N, sN, 0, 1.0);
+      const sN = this.tmp.s, b = this.lanePoint(this.N, sN, 0, 0.9);
       this.S.at(this.southS, this.tmp);
       const dx = this.tmp.dx, dz = this.tmp.dz, c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], r = Math.hypot(b[0] - a[0], b[1] - a[1]) / 2;
       const e = [(a[0] - c[0]) / r, (a[1] - c[1]) / r], arc = [];
       for (let k = 1; k < 12; k++) { const f = k / 12 * Math.PI; arc.push([c[0] + r * (Math.cos(f) * e[0] + Math.sin(f) * dx), c[1] + r * (Math.cos(f) * e[1] + Math.sin(f) * dz)]); }
       const pre = [];
-      for (const d of [38, 18]) if (this.southS - d > s.s + 16) pre.push(this.lanePoint(this.S, this.southS - d, 0, d < 20 ? 0.7 : 0.2));
-      this.begin('south', spline([here, ahead, ...pre, a, ...arc, b, this.lanePoint(this.N, sN + 18, 0, 0.6), this.lanePoint(this.N, sN + 40, 0), this.lanePoint(this.N, sN + 68, 0)]), car, 4.6, 0.85);
+      for (const d of [38, 18]) if (this.southS - d > s.s + 16) pre.push(this.lanePoint(this.S, this.southS - d, 9));
+      this.begin('south', spline([here, ahead, ...pre, a, ...arc, b, this.lanePoint(this.N, sN + 18, 0, 0.5), this.lanePoint(this.N, sN + 40, 0), this.lanePoint(this.N, sN + 68, 0)]), car, 3.6, 0.72);
       this.active.hold = ['north', sN - 160, sN + 660, sN + 85];
       this.active.center = c;
-      // машины позади на своей стороне и те, что подъезжают по встречной, пропускают разворачивающегося
-      this.active.gates = [{ key: 'south', s: s.s - 6 }, { key: 'north', s: sN - 12 }];
+      // те, кто едет следом в левом ряду, и те, кто подъезжает по встречной, пропускают разворачивающегося
+      this.active.gates = [{ key: 'south', s: s.s - 6, left: true }, { key: 'north', s: sN - 12 }];
     }
   }
 

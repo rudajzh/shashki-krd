@@ -70,8 +70,8 @@ export class Sound {
       src.connect(g); g.connect(this.master); src.start();
       this.smp[name] = { src, g };
     }).catch(() => { /* нет файла или формат не поддержан — остаёмся на синтезе */ });
-    sample('idle', 'assets/sound/v8-idle.wav?v=23');
-    sample('squeal', 'assets/sound/tire-squeal.wav?v=23');
+    sample('idle', 'assets/sound/v8-idle.wav?v=24');
+    sample('squeal', 'assets/sound/tire-squeal.wav?v=24');
     this.rainN = loop('highpass', 2600, 0.4);
     // сирена патруля: тон, который «качается» между двумя нотами
     this.sirenO = ctx.createOscillator(); this.sirenO.type = 'square'; this.sirenO.frequency.value = 700;
@@ -217,6 +217,9 @@ export class Sound {
     src.connect(g); g.connect(this.master); src.start(t); src.stop(t + 1);
   }
 
+  coin(i = 0) { this.tone(1760 + (i % 4) * 180, 0.09, 0.05, 'sine'); }          // монета долетела до кошелька
+  combo(n) { this.tone(440 * Math.pow(2, Math.min(12, n + 2) / 12), 0.16, 0.11); } // серия выросла — нота выше
+  reward(k = 1) { const f = k > 0.8 ? [784, 988, 1175, 1568] : [784, 988]; f.forEach((x, i) => setTimeout(() => this.tone(x, 0.22, 0.12), i * 70)); } // большая награда — восходящий аккорд
   splash() { this.burst(1400, 0.6, 0.45, 0.28, 0.5); } // проехали лужу
   flash() { this.burst(2600, 5, 0.35, 0.05); setTimeout(() => this.burst(2600, 5, 0.35, 0.05), 140); }
   whoosh() { this.burst(900, 1.2, 0.5, 0.35, 0.35); }

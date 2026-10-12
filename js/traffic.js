@@ -1,8 +1,8 @@
 // Поток: машины едут по полосам Красной, держат дистанцию и иногда перестраиваются с поворотником.
 // Ночью машину видно по огням: фары, стоп-сигналы и крупные оранжевые поворотники — это светящиеся точки.
 import * as THREE from 'three';
-import { rowOffset, rowAt, halfWidth } from './chain.js?v=23';
-import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=23';
+import { rowOffset, rowAt, halfWidth } from './chain.js?v=24';
+import { VEHICLES, vehicleMesh, pickKind } from './vehicles.js?v=24';
 
 const AHEAD = 520, BEHIND = 180;
 const LANES_FULL = 4.8; // при стольких рядах на дорогу выходит весь поток
@@ -24,7 +24,7 @@ export class Traffic {
     this.tmp = {}; this.tmp2 = {};
     let seed = 12345;
     this.rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    this.gates = [];   // «шлагбаумы» {key, s}: машины выше по потоку притормаживают перед этой точкой и пропускают игрока, который сейчас выедет на дорогу
+    this.gates = [];   // «шлагбаумы» {key, s, left — только для левого ряда}: машины выше по потоку притормаживают перед этой точкой и пропускают игрока, который сейчас выедет на дорогу
     this.clearRows = []; // участки перед разворотами {key, s0, s1, side}: там крайний левый (side 1) или правый (−1) ряд держим свободным
     this.ghost = { active: true, isPlayer: true, on: false, key: 'north', s: 0, off: 0, v: 0, hl: 2.5, hw: 0.95, latV: 0, lane: 0, nextLane: -1 };
     this.dirT = 0;
@@ -47,16 +47,10 @@ export class Traffic {
       scene.add(mesh);
       this.cars.push({ key: 'north', chain: chains.north, mesh, kind, racer: true, behave: 'racer', slow: 1, rank: 9, hl: t.len / 2 + 0.05, hw: t.wid / 2, ly: t.belt, ...blank(), want: 44, head: 0.3, react: 0, acc: 6.2 });
     }
-    // сломанные машины с аварийкой: стоят в правом ряду, поток их объезжает
-    const tri = new THREE.Shape();
-    tri.moveTo(-0.3, 0); tri.lineTo(0.3, 0); tri.lineTo(0, 0.5); tri.closePath();
-    const triGeo = new THREE.ShapeGeometry(tri), triMat = new THREE.MeshBasicMaterial({ color: 0xff3a1a, side: THREE.DoubleSide });
+    // сломанные машины с аварийкой: стоят в правом ряду, поток их объезжает (знак позади не ставят — у нас так не делают)
     for (const key of ['north', 'south']) for (let k = 0; k < 3; k++) {
       const kind = ['solaris', 'rio', 'polo'][k], V = VEHICLES[kind], t = V.spec;
       const mesh = vehicleMesh(kind, V.colors[Math.floor(this.rnd() * 6)], envMap);
-      const sign = new THREE.Mesh(triGeo, triMat); // знак аварийной остановки позади
-      sign.position.set(0, 0.05, -t.len / 2 - 9);
-      mesh.add(sign);
       mesh.visible = false;
       scene.add(mesh);
       this.cars.push({ key, chain: chains[key], mesh, kind, stalled: true, behave: 'stalled', slow: 0, rank: 0, hl: t.len / 2 + 0.05, hw: t.wid / 2, ly: t.belt, ...blank() });
@@ -119,14 +113,14 @@ export class Traffic {
 
   place(car, s) {
     const c = car.chain;
-    if (s < 8 || s > c.total - 8) return false;
+    if (s < 8 || s > c.total - 8 || (this.via && car.key === this.via.key && s > this.via.s0 - 10)) return false;
     c.at(s, this.tmp);
     const lo = this.tmp.lo, hi = this.tmp.hi, lane = car.behave === 'bus' ? hi : lo + Math.floor(this.rnd() * (hi - lo + 1)); // автобус — только в правом ряду
     if (!this.laneFree(car, lane, s, 12 + car.hl * 2, 12 + car.hl * 2)) return false;
     // тот, кто перестраивается, числится уже в новом ряду, а сам ещё в старом — смотрим и по месту на дороге
     const off = rowOffset(lane, this.tmp);
     for (const o of this.cars) if (o !== car && o.active && o.key === car.key && Math.abs(o.off - off) < 2.8 && Math.abs(o.s - s) < 12 + car.hl * 2) return false;
-    c.at(s + 200, this.tmp2);
+    c.at(this.via && car.key === this.via.key ? Math.min(s + 200, this.via.s0 - 1) : s + 200, this.tmp2); // перед «Авророй» ряды не кончаются, а уходят на Офицерскую
     if (lane > this.tmp2.hi || lane < this.tmp2.lo) return false; // ряд скоро кончится — незачем в нём появляться
     if (hi > lo) for (const z of this.clearRows) if (z.key === car.key && s > z.s0 - 200 && s < z.s1 && lane === (z.side > 0 ? lo : hi)) return false; // этот ряд перед разворотом свободен
     for (const t of this.stalledCars) if (t.active && t.key === car.key && t.lane === lane && t.s > s && t.s - s < 260) return false; // не в ряд, где впереди сломанная
@@ -246,14 +240,16 @@ export class Traffic {
     for (const car of this.cars) {
       if (!car.racer) continue;
       if (car.active) { if (car.key === key && Math.abs(car.s - stop) < 12) placed.push(car); continue; }
-      const lane = free.find((l) => !taken.has(l));
+      // издалека (ставит светофор) — только на свободное место; вплотную к игроку (он взвёл старт) место освобождаем
+      const busy = (l) => { const off = rowOffset(l, at); return this.cars.some((o) => o.active && !o.racer && o.key === key && Math.abs(o.off - off) < 2.7 && o.s > stop - 26 && o.s < stop + 10); };
+      const lane = free.find((l) => !taken.has(l) && (skipLane >= 0 || !busy(l)));
       if (lane === undefined || placed.length >= (lanes > 2 ? 2 : 1)) break;
       taken.add(lane);
       car.key = key; car.chain = c; car.s = stop - car.hl - 0.8; car.lane = lane; car.nextLane = -1;
       car.off = rowOffset(lane, at); car.v = 0; car.want = this.racerTop * (0.93 + this.rnd() * 0.1); car.blinkSide = 0; car.latV = 0; car.prevLong = NaN; car.wait = 0; car.hold = 0; car.scare = 0;
       car.active = true; car.mesh.visible = true;
       placed.push(car);
-      for (const o of this.cars) if (o !== car && o.active && !o.stalled && o.key === key && (o.lane === lane || Math.abs(o.off - car.off) < 2.7) && Math.abs(o.s - car.s) < 16) { o.active = false; o.mesh.visible = false; o.retry = 1; }
+      if (skipLane >= 0) for (const o of this.cars) if (o !== car && o.active && !o.stalled && o.key === key && (o.lane === lane || Math.abs(o.off - car.off) < 2.7) && Math.abs(o.s - car.s) < 16) { o.active = false; o.mesh.visible = false; o.retry = 1; }
     }
     return placed;
   }
@@ -312,8 +308,75 @@ export class Traffic {
     if (e.d > arc + 70) { car.entering = false; car.entry = null; car.mesh.visible = false; car.blinkSide = 0; car.retry = 1 + this.rnd() * 2; }
   }
 
+  // У «Авроры» Красная не кончается, а уходит налево по Офицерской и возвращается обратной стороной.
+  // Поток едет туда же: с проезжей части key (начиная с отметки s0) по пути pts и дальше — по toKey с отметки sTo.
+  // Раньше машины доезжали до конца оси и гасли на глазах у игрока.
+  setVia(key, s0, pts, toKey, sTo) {
+    const n = pts.length, cum = [0];
+    for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    // в поворотах — медленнее: скорость по кривизне, с запасом на торможение
+    const lim = new Float32Array(n), dir = (i) => Math.atan2(pts[Math.min(n - 1, i + 3)][0] - pts[Math.max(0, i - 3)][0], pts[Math.min(n - 1, i + 3)][1] - pts[Math.max(0, i - 3)][1]);
+    for (let i = 0; i < n; i++) {
+      const a = dir(Math.max(0, i - 4)), b = dir(Math.min(n - 1, i + 4)), ds = Math.max(1, cum[Math.min(n - 1, i + 4)] - cum[Math.max(0, i - 4)]);
+      lim[i] = Math.min(13, Math.sqrt(4.2 / Math.max(1e-4, Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a))) / ds)));
+    }
+    for (let i = n - 2; i >= 0; i--) lim[i] = Math.min(lim[i], Math.sqrt(lim[i + 1] * lim[i + 1] + 2 * 2.2 * (cum[i + 1] - cum[i])));
+    this.chains[key].at(s0, this.tmp);
+    this.via = { key, s0, pts, cum, lim, total: cum[n - 1], toKey, sTo, off0: rowOffset(this.tmp.hi, this.tmp), hi0: this.tmp.hi };
+  }
+  startVia(car) {
+    const V = this.via, row = Math.max(0, Math.round((car.off - V.off0) / 3.5)); // 0 — внешний ряд, 1 — тот, что левее
+    car.entry = { via: true, d: Math.max(0, car.s - V.s0), row, lat: car.off - V.off0, i: 0 };
+    car.active = false; car.entering = true; car.turn = null; car.nextLane = -1; car.blinkSide = 1; car.latV = 0; car.prevLong = NaN;
+    car.yieldT = 0; car.nudgeT = 0; car.scare = 0;
+    this.advanceVia(car, 0);
+  }
+  advanceVia(car, dt) {
+    const V = this.via, e = car.entry, n = V.pts.length;
+    while (e.i < n - 2 && V.cum[e.i + 1] < e.d) e.i++;
+    // кто впереди: такие же машины на пути, а под конец — те, кто уже едет по обратной стороне
+    let gap = Infinity, lv = 0;
+    for (const t of this.cars) {
+      if (t === car) continue;
+      if (t.entering && t.entry && t.entry.via && t.entry.row === e.row && t.entry.d > e.d) { const g = t.entry.d - e.d - t.hl - car.hl; if (g < gap) { gap = g; lv = t.v; } }
+      else if (t.active && t.key === V.toKey && t.s < V.sTo + 70 && V.total - e.d < 90) { const g = V.total - e.d + t.s - V.sTo - t.hl - car.hl; if (g > -6 && g < gap && Math.abs(t.off - (e.offTo ?? (e.offTo = this.offTo(e.row)))) < 2.6) { gap = g; lv = t.v; } }
+    }
+    let want = Math.min(car.want, V.lim[e.i]);
+    if (gap < Infinity) {
+      want = Math.min(want, Math.sqrt(lv * lv + 2 * 3 * Math.max(0, gap - 2.5)));
+      const desired = 3.5 + car.v * 1.2;
+      if (gap < desired * 1.5) want = Math.min(want, Math.max(0, lv + (gap - desired) * 0.7));
+    }
+    const dv = want - car.v;
+    car.braking = dv < -1.2 ? 0.3 : Math.max(0, car.braking - dt);
+    car.v = Math.max(0, car.v + Math.max(-6 * dt, Math.min(car.acc * dt, dv)));
+    e.d += car.v * dt;
+    if (e.d >= V.total) { // выехала на обратную сторону: дальше она — обычная машина в своём ряду
+      const ch = this.chains[V.toKey];
+      ch.at(V.sTo, this.tmp);
+      const lane = Math.max(this.tmp.lo, this.tmp.hi - e.row);
+      car.key = V.toKey; car.chain = ch; car.entering = false; car.entry = null; car.active = true; car.viaLead = false;
+      car.s = V.sTo; car.lane = lane; car.nextLane = -1; car.off = rowOffset(lane, this.tmp);
+      if (!car.racer) car.want = this.wantSpeed(lane, this.tmp.hi) * car.slow;
+      car.changeIn = 6 + this.rnd() * 8; car.blinkT = -1; car.blinkSide = 0; car.hurry = 0; car.wait = 0; car.hold = 0;
+      car.nudge = 0; car.nudgeAge = 0; car.nudgeCd = 0; car.tStar = Infinity; car.evadeSlow = false; car.seen = null;
+      return;
+    }
+    const i = e.i, seg = V.cum[i + 1] - V.cum[i] || 1, t = Math.max(0, Math.min(1, (e.d - V.cum[i]) / seg)), A = V.pts[i], B = V.pts[i + 1];
+    const dx = (B[0] - A[0]) / seg, dz = (B[1] - A[1]) / seg;
+    // свой ряд держит всю дорогу: сдвиг влево от внешнего ряда — row рядов; начальное отклонение уходит за первые 40 м
+    const lat = e.row * 3.5 + (e.lat - e.row * 3.5) * Math.max(0, 1 - e.d / 40);
+    car.x = A[0] + (B[0] - A[0]) * t + dz * lat; car.z = A[1] + (B[1] - A[1]) * t - dx * lat;
+    car.dx = dx; car.dz = dz;
+    // для тех, кто едет следом по Красной, она ещё какое-то время «впереди в ряду»
+    car.viaLead = e.d < 70; car.s = V.s0 + e.d; car.lane = V.hi0 - e.row; car.off = V.off0 + lat;
+    if (e.d > V.total - 30) car.blinkSide = 0;
+  }
+  offTo(row) { const V = this.via; this.chains[V.toKey].at(V.sTo, this.tmp2); return rowOffset(Math.max(this.tmp2.lo, this.tmp2.hi - row), this.tmp2); }
+
   // едет по боковой улице, поворачивает по дуге и становится обычной машиной потока
   advanceEntry(car, dt) {
+    if (car.entry.via) return this.advanceVia(car, dt);
     if (car.entry.exit) return this.advanceExit(car, dt);
     const e = car.entry, arc = e.R * Math.PI / 2;
     // перед поворотом притормаживает; если в ряду кто-то едет — пропускает
@@ -347,13 +410,25 @@ export class Traffic {
     }
   }
 
+  // Страховка на развороте: убрать только ту машину, в которую игрок иначе въехал бы (кузова уже пересеклись).
+  // Соседей по ряду не трогаем — раньше они пропадали на глазах.
+  clearHit(player, pw) {
+    const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
+    for (const car of this.cars) {
+      if (!car.active || car.stalled) continue;
+      const rx = player.x - car.x, rz = player.z - car.z;
+      if (rx * rx + rz * rz > 100 || !obbOverlap(rx, rz, fx, fz, pw.hl, pw.hw, car.dx, car.dz, car.hl, car.hw)) continue;
+      car.active = false; car.mesh.visible = false; car.retry = 1.5 + this.rnd();
+    }
+  }
+
   // skip — участок {key, s0, s1}, где машин ставить не надо (туда сейчас выедет игрок)
   reset(player, skip = null) {
     this.held = null; this.gates = [];
     this.only = 'north';
     for (const car of this.cars) if (!car.stalled && !car.racer) { car.key = 'north'; car.chain = this.chains.north; }
     for (const key of ['north', 'south']) this.proj[key].i = -1;
-    for (const car of this.cars) { car.active = false; car.entering = false; car.entry = null; car.mesh.visible = false; }
+    for (const car of this.cars) { car.active = false; car.entering = false; car.entry = null; car.viaLead = false; car.mesh.visible = false; }
     for (const key of ['north', 'south']) {
       const p = this.window(key, player);
       for (const car of this.cars) {
@@ -549,7 +624,10 @@ export class Traffic {
         }
         continue;
       }
-      if (car.s < p.w0 || car.s > p.w1 || car.s > c.total - 8) { car.active = false; car.mesh.visible = false; car.retry = this.rnd() * 0.5; continue; }
+      if (this.via && car.key === this.via.key && car.s >= this.via.s0) { this.startVia(car); continue; } // дорога уходит на Офицерскую — едем по ней
+      // на стороне, с которой игрок ушёл на разворот, окно не «переворачиваем»: машины уезжают вдаль, а не гаснут разом сбоку от него
+      const w0 = car.key === this.only ? p.w0 : p.s - AHEAD, w1 = car.key === this.only ? p.w1 : p.s + AHEAD;
+      if (car.s < w0 || car.s > w1 || car.s > c.total - 8) { car.active = false; car.mesh.visible = false; car.retry = this.rnd() * 0.5; continue; }
       // лишние (дорога сузилась) уходят там, где этого не видно: позади игрока или далеко впереди
       if (!car.racer && car.rank > this.eff + 0.03 && (car.s - p.s < -45 || car.s - p.s > 420)) { car.active = false; car.mesh.visible = false; continue; }
 
@@ -557,7 +635,7 @@ export class Traffic {
       const lo = o.lo, hi = o.hi, here = { lf: o.lf, ls: o.ls };
       if (car.lane > hi) { car.lane = hi; car.nextLane = -1; car.blinkSide = 0; }
       if (car.lane < lo) { car.lane = lo; car.nextLane = -1; car.blinkSide = 0; }
-      c.at(car.s + 190, this.tmp2);
+      c.at(this.via && car.key === this.via.key ? Math.min(car.s + 190, this.via.s0 - 1) : car.s + 190, this.tmp2);
       let hiA = Math.min(hi, this.tmp2.hi), loA = Math.max(lo, this.tmp2.lo); // через пару сотен метров рядов может стать меньше — справа или слева
       // перед разворотом крайний ряд, через который поедет игрок, освобождаем заранее
       if (hi - lo >= 1) for (const z of this.clearRows) if (z.key === car.key && car.s > z.s0 - 190 && car.s < z.s1) { if (z.side > 0) loA = Math.max(loA, lo + 1); else hiA = Math.min(hiA, hi - 1); }
@@ -586,7 +664,7 @@ export class Traffic {
         }
         if (inPath && gap < gapBest) { gapBest = gap; lead = t; leadHard = sep < 0; }
       };
-      for (const t of this.cars) if (t !== car && t.active && t.key === car.key) scan(t);
+      for (const t of this.cars) if (t !== car && (t.active || t.viaLead) && t.key === car.key) scan(t);
       if (me) scan(me);
 
       // --- скорость: держим дистанцию по времени (очередь после светофора растягивается, а не едет бампер в бампер) ---
@@ -665,7 +743,7 @@ export class Traffic {
         }
       }
       // игрок сейчас выедет на дорогу (с площадки или с разворота): кто успевает — притормаживает и пропускает, кто уже рядом — проезжает раньше
-      for (const gt of this.gates) if (gt.key === car.key && car.s < gt.s) {
+      for (const gt of this.gates) if (gt.key === car.key && car.s < gt.s && (!gt.left || car.lane <= lo)) {
         const d = gt.s - 9 - car.s - car.hl;
         if (d > car.v * car.v / 9 - 2) limit = Math.min(limit, Math.sqrt(2 * 3.5 * Math.max(0, d)));
       }
@@ -795,7 +873,7 @@ export class Traffic {
       } else if (!Number.isNaN(car.prevLong) && (car.prevLong < 0) !== (long < 0)) {
         const gap = Math.abs(lat) - pw.hw - car.hw;
         const rel = Math.abs(player.vx * car.dx + player.vz * car.dz - car.v);
-        if (gap < 1.25 && speed > 14 && rel > 4) events.near.push({ gap, oncoming: player.vx * car.dx + player.vz * car.dz < 0, speed });
+        if (gap < 1.25 && speed > 14 && rel > 4) events.near.push({ gap, oncoming: player.vx * car.dx + player.vz * car.dz < 0, speed, x: car.x, z: car.z });
       }
       car.prevLong = long;
     }

@@ -1,1 +1,5 @@
 .DS_Store
+promo/frames/
+promo/*.mp4
+promo/*@2x.png
+promo/probe.jpg

@@ -2,7 +2,7 @@
 // на красный поток Красной встаёт у стоп-линии, а поперёк проезжают машины с боковой улицы.
 // Один ряд перед каждой стоп-линией остаётся пустым (free): по нему игрок всегда может подъехать первым.
 import * as THREE from 'three';
-import { VEHICLES, vehicleMesh } from './vehicles.js?v=23';
+import { VEHICLES, vehicleMesh } from './vehicles.js?v=24';
 
 const CYCLE = 27, GREEN = 15, YELLOW = 3; // секунды: красный — оставшиеся 9
 const CROSS_V = 13; // скорость машин на поперечной улице, м/с
@@ -11,6 +11,7 @@ const COLORS = { g: [0.2, 1, 0.45], y: [1, 0.75, 0.1], r: [1, 0.12, 0.08] };
 export class Signals {
   constructor(scene, world, glowTex, envMap) {
     this.enabled = false;
+    this.chase = false; // идёт погоня: поперёк никто не выезжает, светофоры впереди игрока держат зелёный
     this.nx = { it: null, d: 0 };
     this.time = 0;
     this.barriers = world.barriers;
@@ -170,17 +171,20 @@ export class Signals {
     for (const it of this.byChain[key]) {
       if (it.stop < s + 6) continue;
       if (n++ >= 3 || it.stop - s > 700) break;
-      this.greenIn(it, (it.stop - s) / Math.max(18, v) - 1.2);
+      // зелёный — за шесть секунд до подъезда, чтобы очередь у стоп-линии успела разъехаться; идущий красный
+      // обрываем, как только с перекрёстка уедут те, кто уже едет поперёк (новых в погоне не выпускаем)
+      if (it.g.state !== 'g' && this.pool.some((c) => c.busy && c.g === it.g && c.t < (c.dir > 0 ? it.g.e1 : -it.g.e0) + 4)) continue;
+      this.greenIn(it, (it.stop - s) / Math.max(18, v) - 6, true);
     }
     this.paint();
   }
   // подстроить перекрёсток так, чтобы через T секунд там начался зелёный
-  greenIn(it, T) {
+  greenIn(it, T, force = false) {
     const now = (this.time + it.g.off) % CYCLE;
     if (it.g.state === 'g' && CYCLE - now > T && GREEN - now < T + 4) { it.g.off -= now - 1; return; } // уже зелёный, но погаснет до подъезда — продлеваем
     let u = ((-T % CYCLE) + CYCLE) % CYCLE;                       // какая фаза должна быть сейчас
     if (u >= GREEN && u < GREEN + YELLOW) u = GREEN + YELLOW;      // жёлтый пропускаем
-    if (it.g.state === 'r' && u >= GREEN + YELLOW && u > now) return; // идущий красный не укорачиваем: поперёк ещё едут
+    if (it.g.state === 'r' && !force && u >= GREEN + YELLOW && u > now) return; // идущий красный не укорачиваем: поперёк ещё едут
     if (it.g.state === 'g' && u < GREEN) return;                   // и так будет зелёный
     it.g.off += u - now;
     const st = u < GREEN ? 'g' : 'r';
@@ -211,11 +215,11 @@ export class Signals {
         if (st === 'g') it.greenT = this.time;
       }
       // на жёлтый с боковой улицы уже подкатывают машины — если перекрёсток рядом с игроком
-      if (st === 'y' && g.cross && Math.hypot(g.cx - player.x, g.cz - player.z) < 320) this.launch(g);
+      if (st === 'y' && g.cross && !this.chase && Math.hypot(g.cx - player.x, g.cz - player.z) < 320) this.launch(g);
       // к красному в первом ряду встают гонщики — если перекрёсток впереди игрока и ещё не слишком близко
-      if (st === 'y' && this.traffic) {
+      if (st === 'y' && this.traffic && !this.chase) {
         const key = this.traffic.only, pr = this.traffic.proj[key];
-        for (const it of this.byChain[key]) if (it.g === g && it.stop - pr.s > 95 && it.stop - pr.s < 330) this.traffic.stageRacers(key, it.stop, -1, it.free);
+        for (const it of this.byChain[key]) if (it.g === g && it.stop - pr.s > 150 && it.stop - pr.s < 360) this.traffic.stageRacers(key, it.stop, -1, it.free);
         // с боковой улицы едут не только поперёк: кто-то поворачивает на Красную и встраивается в поток —
         // справа направо в правый ряд, слева (из проезда через бульвар) налево в левый. Подъезжают следом за теми, кто едет прямо.
         for (const it of this.byChain[key]) if (it.g === g && !it.c.ped && it.stop - pr.s > 50 && it.stop - pr.s < 420) {

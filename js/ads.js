@@ -17,7 +17,12 @@ export class Ads {
   }
 
   // игра загрузилась и готова — площадка убирает свою заставку
-  ready() { this.loaded = true; try { this.sdk?.features?.LoadingAPI?.ready(); } catch { /* старая версия SDK */ } }
+  ready() {
+    this.loaded = true;
+    try { this.sdk?.features?.LoadingAPI?.ready(); } catch { /* старая версия SDK */ }
+    // площадка сама просит остановить игру и звук (свернули вкладку, открыли её окно поверх) и потом продолжить
+    try { this.sdk?.on?.('game_api_pause', () => this.onPause()); this.sdk?.on?.('game_api_resume', () => { if (!this.busy) this.onResume(); }); } catch { /* нет таких событий */ }
+  }
   // площадке нужно знать, когда идёт сам заезд, а когда меню
   gameplay(on) { try { const g = this.sdk?.features?.GameplayAPI; if (g) on ? g.start() : g.stop(); } catch { /* нет такого API */ } }
 
