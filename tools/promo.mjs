@@ -150,7 +150,7 @@ async function grab(name, view, setup, when) {
 if (what === 'dry') {
   for (let attempt = 0; attempt < 10; attempt++) {
     const page = await open({ width: 1280, height: 720 });
-    await page.evaluate((k) => { const P = window.__P; P.bonus = 3; P.vmax = 40 + k * 1.2; P.start(); }, attempt);
+    await page.evaluate((k) => { const P = window.__P; P.bonus = 3; P.vmax = 41 + (k % 4) * 1.2; P.start(); }, attempt);
     const s = await step(page, 60 * 29.6);
     console.log(`дубль ${attempt}: ${s.crashed ? 'авария (' + s.why + ')' : 'цел'}, впритирку ${s.near}, очки ${s.score}`);
     await page.close();
@@ -160,10 +160,10 @@ if (what === 'dry') {
 if (what === 'video') {
   const W = 1920, Hh = 1080, FPS = 30, SECS = 27, tmp = join(OUT, 'frames');
   const from = process.argv.includes('--take') ? +process.argv[process.argv.indexOf('--take') + 1] : 0;
-  for (let attempt = from; attempt < from + 8; attempt++) {
+  for (let attempt = from; attempt < from + 12; attempt++) {
     rmSync(tmp, { recursive: true, force: true }); mkdirSync(tmp, { recursive: true });
     const page = await open({ width: W, height: Hh });
-    await page.evaluate((k) => { const P = window.__P; P.bonus = 3; P.vmax = 40 + k * 1.2; P.start(); }, attempt); // каждый дубль чуть другой: тот же заезд дважды не повторяется
+    await page.evaluate((k) => { const P = window.__P; P.bonus = 3; P.vmax = 41 + (k % 4) * 1.2; P.start(); }, attempt); // каждый дубль чуть другой: тот же заезд дважды не повторяется
     await step(page, 60 * 2.6); // начало вступления пропускаем: в кадре сразу срыв с места
     let ok = true, s;
     for (let i = 0; i < FPS * SECS; i++) {
@@ -173,7 +173,7 @@ if (what === 'video') {
       if (i % 90 === 0) console.log(`  кадр ${i}/${FPS * SECS}: ${s.v} км/ч, впритирку ${s.near}, очки ${s.score}`);
     }
     await page.close();
-    if (!ok || s.near < 5) { console.log(`  … дубль ${attempt + 1} не удался (${ok ? 'проходов впритирку всего ' + s.near : 'авария'}), ещё попытка`); continue; }
+    if (!ok || s.near < 4) { console.log(`  … дубль ${attempt + 1} не удался (${ok ? 'проходов впритирку всего ' + s.near : 'авария'}), ещё попытка`); continue; }
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', join(tmp, 'f%05d.jpg'), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '19', '-preset', 'slow', '-movflags', '+faststart', join(OUT, 'gameplay.mp4')]);
     rmSync(tmp, { recursive: true, force: true });
     console.log('  ✓ gameplay.mp4');
